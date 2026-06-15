@@ -42,10 +42,10 @@ const ctfEvents: CTFEvent[] = [
 <blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
 "Lakeshore Threat Lab confirmed an attacker pivoted from FIN-WS-07 to NAS-MARITIME-01, the Wabash Marine NAS that hosts the internal Lakefront Fleet Manager web app on port 8088. Imani Boateng captured a short east-west slice of that pivot. Her capture is attached."
 </blockquote>
-<p class="lead">We're handed a single pcap, <code>wabash_nas_pivot_2026-04-18.pcap</code>, and not much else. Time to load it up and see what's actually in there.</p>
+<p class="lead">We're handed a single pcap, <code>wabash_nas_pivot_2026-04-18.pcap</code>, so naturally, the next step is to open it in Wireshark.</p>
 
 <h3>First Look in Wireshark</h3>
-<p>Opening the capture, the first thing you notice is how small it is — only a handful of packets, but one of them is way bigger than the rest. All of the traffic is between <code>10.42.18.42</code> and <code>10.42.7.18</code> on port <code>8088</code>, which lines up with the "Lakefront Fleet Manager" app mentioned in the prompt.</p>
+<p>Opening the capture, the first thing you notice is how small it is — only a handful of packets, but one of them is way bigger than the rest. All of the traffic is between <code>10.42.18.42</code> and <code>10.42.7.18</code> on port <code>8088</code>.</p>
 
 <h3>Following the Stream</h3>
 <p>Since basically everything interesting lives inside that one oversized packet, the fastest way to read it is to just follow the whole conversation. Right-click the packet → <strong>Follow → TCP Stream</strong>, and Wireshark reassembles it for you (the <strong>Packet Bytes</strong> pane works too if you'd rather look at the raw hex).</p>
@@ -54,15 +54,14 @@ const ctfEvents: CTFEvent[] = [
 <h3>Finding the Right Request</h3>
 <p>Scrolling through, there are a few <code>GET</code> requests hitting an internal API, but one stands out:</p>
 <pre><code>GET /api/v1/personnel/crew_manifests_q2_2026.csv HTTP/1.1</code></pre>
-<p>Right after it, the server responds with a <code>200 OK</code> and dumps the raw body of a CSV — a crew manifest, by the look of the filename.</p>
+<p>Right after it, the server responds with a <code>200 OK</code> and dumps the raw body of a CSV — a crew manifest.</p>
 
 <h3>Spotting the Flag</h3>
-<p>The CSV header row is <code>vessel_id,crew_id,first_name,last_name,rank,billet,start_date,notes</code>. Most of the <code>notes</code> entries are pretty mundane, but one row has a long, suspiciously base64-looking string sitting where a normal note should be:</p>
+<p>The CSV header row is <code>vessel_id,crew_id,first_name,last_name,rank,billet,start_date,notes</code>. Most of the data in here looks fine, but one row has a long, base64 encoded string sitting where a normal note should be:</p>
 <pre><code class="language-csv">WAB-2207,BR9X2E,Jonas,Tolliver,Master,Charter Liaison,2026-02-14,U1ZJVVNDR3t3YWJhc2hfZmlud3NfcGl2b3RfbmFzX21hcml0aW1lXzAxfQ==</code></pre>
-<p>That trailing <code>==</code> is the classic tell for base64. Decode it with CyberChef or straight from the terminal:</p>
+<p>The next natural step is decoding it. Decoding it with any tool you like reveals the output:</p>
 <pre><code class="language-bash">echo "U1ZJVVNDR3t3YWJhc2hfZmlud3NfcGl2b3RfbmFzX21hcml0aW1lXzAxfQ==" | base64 -d</code></pre>
-<p>Which gives us the flag: <code>SVIUSCG{wabash_finws_pivot_nas_maritime_01}</code></p>
-`
+<p>Which gives us the flag: <code>SVIUSCG{wabash_finws_pivot_nas_maritime_01}</code></p>`
       },
       {
         slug: 'oakhash',
@@ -73,17 +72,17 @@ const ctfEvents: CTFEvent[] = [
 <blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
 "Professor Oak is really wanting to beef up the security of the PC he uses for Pokemon storage and decided to make a program to generate strong passwords for him. The only problem is that he's a little bit predictable with it, and hes just using basic MD5 as a hashing function. His custom hash type OakHash is just: $oak$&lt;version&gt;$&lt;hex digest&gt;. And all his passwords follow the scheme: SVIUSCG{&lt;nature&gt;_&lt;gen1_pokemon&gt;}."
 </blockquote>
-<p class="lead">First entry in the OakHash series, and by far the gentlest. We're given a hash in a custom-looking format, but the password template is small enough that this should be a quick one.</p>
+<p class="lead">The first of the two OakHash CTFs is relatively simple compared to the second and can be solved in under five minutes by writing a simple Python script. We're given a hash in a custom format, which reveals the way Professor Oak hashed his passwords.</p>
 
 <h3>Breaking Down the Format</h3>
 <p>The password template is:</p>
 <pre><code>SVIUSCG{&lt;nature&gt;_&lt;gen1_pokemon&gt;}</code></pre>
 <p>and the hash we need to crack is:</p>
 <pre><code>$oak$1$753a7277c956277fc6a3bb8e31822b25</code></pre>
-<p>Split on <code>$</code> and you get version <code>1</code> plus a plain old MD5 digest: <code>753a7277c956277fc6a3bb8e31822b25</code>. So "OakHash v1" is really just MD5 wearing a costume.</p>
+<p>Split on <code>$</code> and you get version <code>1</code> plus a plain old MD5 digest: <code>753a7277c956277fc6a3bb8e31822b25</code>. So "OakHash v1" is basically a fancy MD5.</p>
 <p>There are 25 Pokémon natures (<code>hardy</code>, <code>lonely</code>, <code>brave</code>, <code>adamant</code>, and so on) and 151 Generation 1 Pokémon, so the whole search space is:</p>
 <p class="font-semibold text-accent text-center my-4 font-mono text-lg">25 × 151 = 3,775 combinations</p>
-<p>That's small enough that a Python loop will finish before you've even finished typing the command.</p>
+<p>That's small enough that a Python loop will finish it very quickly.</p>
 
 <h3>The Cracker</h3>
 <p>Hash every nature/Pokémon pairing and compare it against the target digest. Lists trimmed here for readability — the real script has all 25 natures and all 151 Pokémon:</p>
@@ -91,11 +90,9 @@ const ctfEvents: CTFEvent[] = [
 
 target_hash = "753a7277c956277fc6a3bb8e31822b25"
 
-# Shortened lists (complete lists contain all 25 natures and 151 Pokémon)
 pokemon_natures = ["hardy", "lonely", "brave", "adamant", "naughty", ...]
 gen_1_pokemon = ["bulbasaur", "ivysaur", "venusaur", "charmander", ..., "mew"]
 
-# Generate all potential combinations in the flag format
 combinations = [
     f"SVIUSCG{{{nature}_{pokemon}}}" 
     for nature in pokemon_natures 
@@ -104,13 +101,9 @@ combinations = [
 
 def crack_oak_hash():
     for flag_attempt in combinations:
-        # Compute MD5 hex digest of the candidate password
         hashed = hashlib.md5(flag_attempt.encode('utf-8')).hexdigest()
-        
-        # Check against target hash
         if hashed == target_hash:
             return f"Flag = {flag_attempt}"
-            
     return "Nothing found"
 
 print(crack_oak_hash())</code></pre>
@@ -145,7 +138,7 @@ Wait, you don't have that mode? Oh well....<br/><br/>
 
 See if you can crack the attached hash file and sieze your trainer destiny!"
 </blockquote>
-<p class="lead">Professor Oak clearly learned something from v1 — the password format is way more constrained this time, which helps us. But he's also wrapped it in a custom KDF that runs 65,536 rounds of SHA-256 per guess, which very much does not help us. hashcat doesn't ship a mode for this, so we're writing our own cracker.</p>
+<p class="lead">Professor Oak decided to bulk up his security, and compared to the first OakHash, this one is much trickier. Here, unlike the first one, he's also wrapped it in a custom KDF that runs 65,536 rounds of SHA-256 per guess, which is very annoying because our number of guesses skyrockets.</p>
 
 <h3>1. Working Out the Search Space</h3>
 <p>The hash format is <code>$oak$&lt;version&gt;$&lt;salt&gt;$&lt;hex digest&gt;</code>, and the one we're given is:</p>
@@ -157,39 +150,30 @@ See if you can crack the attached hash file and sieze your trainer destiny!"
     <li><strong>Target Digest:</strong> <code>59af26a7a32dd987cb1dd08d4c889c97d8145967a4a4134ae2ea89e703557d1f</code></li>
   </ul>
 <p>and the password format is <code>SVIUSCG{&lt;nature&gt;_&lt;pokemon&gt;_&lt;move&gt;_&lt;crc32hex&gt;}</code>, where <code>crc32hex</code> is the CRC32 of <code>"&lt;nature&gt;_&lt;gen1_pokemon&gt;_&lt;move&gt;"</code>, formatted as 8 lowercase hex digits.</p>
-<p>The challenge text also says the move has to actually be learnable by the Pokémon in question. Annoying to implement, but it cuts the search space down a lot, so it's worth doing properly. The plan for building our wordlist:</p>
+<p>The challenge text also says the move has to actually be learnable by the Pokémon in question. The plan for building our wordlist:</p>
   <ol class="list-decimal pl-6 space-y-1 mb-4">
     <li>List out all 25 natures (<code>quirky</code>, <code>adamant</code>, ...).</li>
     <li>List out all 151 Gen 1 Pokémon (<code>eevee</code>, <code>zubat</code>, ...).</li>
-    <li>For each Pokémon, pull its Gen 1 learnset — PokeAPI works fine for this.</li>
+    <li>For each Pokémon, pull its Gen 1 learnset — PokeAPI works fine (that is the API I used, but there are definitely more ways to do it).</li>
     <li>For every (nature, pokemon, move) triple, compute the CRC32 and build the candidate flag string.</li>
   </ol>
-<p>That gives us <strong>767,350 candidates</strong> total. Not a huge number on its own — but combined with the KDF below, every guess is going to cost us.</p>
+<p>That gives us <strong>767,350 candidates</strong> total. That wouldn't be so bad, but we have to remember the iterations, and because of that, our number of guesses goes up to something around 50 billion.</p>
 
 <h3>2. What OakHash v2 Actually Does</h3>
 <p>The challenge ships the exact Python reference implementation:</p>
 <pre><code class="language-python">def oakhash_v2(password: str, salt: bytes) -> str:
     p = password.encode()
-    # Compute CRC32 of the password bytes
     c = zlib.crc32(p) &amp; 0xFFFFFFFF
     cbytes = c.to_bytes(4, "little")
-    
-    # Generate the initial SHA-256 hash
     x = hashlib.sha256(salt + p).digest()
-    
-    # 65,536 iterations of mixing and hashing
     for i in range(65536):
         block = bytearray(x)
         for j in range(32):
-            # XOR with rotating CRC32 bytes
             block[j] ^= cbytes[(i + j) % 4]
-            # Bitwise rotation to the left by 3 (ROL 3)
             block[j] = ((block[j] &lt;&lt; 3) | (block[j] &gt;&gt; 5)) &amp; 0xFF
-        
-        # Concat: rotated block + password + iteration index as uint16-LE
         x = hashlib.sha256(bytes(block) + p + i.to_bytes(2, "little")).digest()
     return x.hex()</code></pre>
-<p>Every candidate password needs 65,536 SHA-256 calls. Multiply that by 767,350 candidates and you get something north of 50 billion hashes total — Python would turn this into a multi-day affair. So: time to write a fast, multi-threaded C cracker.</p>
+<p>Because of the huge amount of guesses we have to make, instead of writing this in Python like Professor Oak did, it's going to be much faster to do it in C.</p>
 
 <h3>3. Making the C Cracker Actually Fast</h3>
 <p>Just looping and calling OpenSSL's <code>SHA256()</code> helps, but there's a lot of free performance left on the table. Here's what made the real difference in <code>cracker_optimized.c</code>:</p>
@@ -205,7 +189,7 @@ memset(buf, 0, total);
 memcpy(buf + 32, pwd, pass_len); // copy password once
 buf[msg_len] = 0x80;             // set padding marker once
 uint64_t bitlen = (uint64_t)msg_len * 8;
-for (int i = 0; i &lt; 8; i++) buf[total - 1 - i] = (uint8_t)(bitlen &gt;&gt; (8 * i)); // set big-endian bit length
+for (int i = 0; i &lt; 8; i++) buf[total - 1 - i] = (uint8_t)(bitlen &gt;&gt; (8 * i));
 </code></pre>
 <p>Inside the loop, the only bytes that ever change are the 32-byte rotated block and the 2-byte counter:</p>
 <pre><code class="language-c">buf[32 + pass_len]     = (uint8_t)(i &amp; 0xFF);
@@ -223,15 +207,14 @@ for (int w = 0; w &lt; idx; w++) {
     if (__atomic_load_n(&amp;found, __ATOMIC_RELAXED)) continue;
     ...
 </code></pre>
-<p>Work gets handed out in chunks of 64 candidates so faster threads don't sit around waiting, and an atomic <code>found</code> flag lets every thread bail the moment one of them lands the correct hash.</p>
+<p>Work gets handed out in chunks of 64 candidates so faster threads don't sit around waiting. Now that we have optimized the script from hours to a couple of minutes, it's just a matter of running it.</p>
 
 <h3>4. Running It</h3>
-<p>Compiled with the usual "give me everything" flags:</p>
+<p>Compiled:</p>
 <pre><code class="language-bash">gcc -O3 -march=native -fopenmp cracker_optimized.c -o cracker -lssl -lcrypto -lz</code></pre>
 <p>Against our 767,350 candidates it cranks along at roughly 1,330 passwords/sec (~87 million SHA-256 transforms per second), and finds the match in about 8 minutes:</p>
 <pre><code>[*] Loaded 767350 candidates. Starting OpenMP brute-force...
-[*] Progress: 85.36% (655000/767350)  rate=1330.1/s  ETA=84s    
-[+] SUCCESS! Hash cracked.
+[*] Progress: 85.36% (655000/767350)  rate=1330.1/s  ETA=84s
 [+] FLAG: SVIUSCG{quirky_eevee_tackle_780deef6}</code></pre>
 
 <h3>Flag</h3>
@@ -246,7 +229,7 @@ for (int w = 0; w &lt; idx; w++) {
 <blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
 "Two heirs received encrypted copies of Coppersmith's will. The lawyer, being old-fashioned, used RSA with e=3 and helpfully added 1 to the second copy "for uniqueness." On one of the documents, there appeared to be a long string of numbers accidentally printed that may have leaked at least a partial key needed to decrypt the documents. Two heirs, two paths to the inheritance.. who will get it first?"
 </blockquote>
-<p class="lead">The challenge name and description are pointing pretty hard at some heavyweight RSA math, and honestly we spent a while down that road before realizing the actual bug is much simpler than advertised.</p>
+<p class="lead">The challenge name and description are pointing pretty hard at some difficult RSA math, but if you look at the script carefully, you will find a super simple and glaring weakness.</p>
 
 <h3>The Attacks We Almost Needed</h3>
 <p>Reading the prompt, there are two attacks that seem clearly "intended":</p>
@@ -254,61 +237,51 @@ for (int w = 0; w &lt; idx; w++) {
     <li><strong>Franklin-Reiter related message attack:</strong> two ciphertexts (<code>c1</code> and <code>c2</code>) encrypt related plaintexts (<code>m</code> and <code>m + 1</code>) under a small public exponent, <code>e = 3</code> — textbook setup for this attack.</li>
     <li><strong>Coppersmith partial key exposure:</strong> the "leaked string of numbers" reads like the high bits of the private exponent <code>d</code> (<code>d_high</code>), which is exactly what Coppersmith's small-roots theorem and lattice reduction (LLL) are built to exploit.</li>
   </ul>
-<p>Both are legitimate, solvable paths here. Neither one ended up being necessary.</p>
+<p>Both are legitimate, solvable paths here. But at the end of the day, it's just too much work because of this super simple bug.</p>
 
 <h3>The Real Bug: A Hardcoded PRNG Seed</h3>
 <p>Digging through the source for how the keys actually get generated, one line gives the whole thing away:</p>
 <pre><code class="language-python">rng = random.Random(0x1337)</code></pre>
 <p>The RNG used to generate <code>p</code> and <code>q</code> is seeded with a fixed constant. That means key generation is <em>completely deterministic</em> — run this code anywhere, anytime, and you'll get back the exact same <code>p</code> and <code>q</code> every single time.</p>
-<p>So instead of touching lattices or Franklin-Reiter at all, we can just regenerate the keypair ourselves from scratch and decrypt directly.</p>
+<p>So instead of touching lattices or Franklin-Reiter at all, we can just regenerate the keypair ourselves from scratch and decrypt directly, and not waste time doing hard math.</p>
 
 <h3>Exploit Script</h3>
 <p>Re-seed Python's RNG with <code>0x1337</code>, regenerate the 1024-bit primes the same way the challenge does, rebuild the private key, and decrypt <code>c1</code>:</p>
 <pre><code class="language-python">import random
 from sympy import nextprime
 
-# Parameters from the challenge
 e = 3
-N_given = 25242631456189260899103953086025597423270381338227101278425339663707221286863571815628817568633363700487351744535327223302902166155224734081357864317697494480015742585201495799365124931714032040973257536285830468868216042553816713280054883129862628603506318548886560770574582787826438548226354262413194850373268643355637925202070532838594033854601698962041514556491317263842400887700032276578064109922106998852012020713187265571676022527382693861112041344317096915949017604970204841686995028544205723017188986614246476526624290916242149669988369169621826988203291645531798341711106625032088919324690744101854252364477
-c1 = 26636060683933356201841204437377666907271525456413989856427901422837285094809828700289647560426241292625396211795152899193917770890648391593898129758917971520354420943423846038529650780407118497903135120455307924212036374482371916897442296632415698846760038738874255390814501949445020686953715368262807170710544669029
+N_given = 2524... 
+c1 = 26636... 
 
-# Replicate the PRNG with the same static seed
 rng = random.Random(0x1337)
 
 def gen_prime_1024(rng, e):
     while True:
         p = rng.getrandbits(1024)
-        p |= (1 << 1023)
+        p |= (1 &lt;&lt; 1023)
         p |= 1
         p = nextprime(p)
         if p.bit_length() == 1024 and (p - 1) % e != 0:
             return p
 
-# Deterministically generate p and q
 p = gen_prime_1024(rng, e)
 q = gen_prime_1024(rng, e)
 
-# Validate factors
 if p * q == N_given:
-    print("[+] Factoring successful! Modulus reconstructed via static PRNG seed.")
-    
-    # Compute the decryption key d
+    print("got the modulus")
     phi = (p - 1) * (q - 1)
     d = pow(e, -1, phi)
-    
-    # Standard RSA decryption
     m = pow(c1, d, N_given)
-    
-    # Convert integer to bytes
     flag = bytes.fromhex(hex(m)[2:])
-    print(f"[+] FLAG: {flag.decode()}")
+    print(f"FLAG: {flag.decode()}")
 </code></pre>
 
 <h3>Flag Recovery</h3>
-<p>Run it, and out comes the flag — no lattice reductions, no related-ciphertext math, none of it:</p>
+<p>Run it, and out comes the flag — no hard math required, just a simple script.</p>
 <pre><code class="language-bash">$ python3 solve.py
-[+] Factoring successful! Modulus reconstructed via static PRNG seed.
-[+] FLAG: SVIUSCG{c0pp3r5m1th_fr4nkl1n_r3173r_ch41n3d}</code></pre>
+got the modulus
+FLAG: SVIUSCG{c0pp3r5m1th_fr4nkl1n_r3173r_ch41n3d}</code></pre>
 
 <h3>Flag</h3>
 <pre><code>SVIUSCG{c0pp3r5m1th_fr4nkl1n_r3173r_ch41n3d}</code></pre>`
@@ -318,52 +291,26 @@ if p * q == N_given:
         title: 'Souvenirs 🌍',
         category: 'forensics',
         description: 'Every traveler comes home with a bag full of souvenirs. This postcard came back from a long trip around the world. Open it carefully. Some travelers leave more behind a picture than you\'d think.',
-        content: `<h2>Souvenirs — US Cyber Open Season VI</h2>
+        content: `<h2>Souvenirs 🌍 — US Cyber Open Season VI</h2>
 <blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
 "Every traveler comes home with a bag full of souvenirs — some you put on a shelf, some you tuck quietly inside other things so the airport doesn't ask questions. This postcard came back from a long trip around the world. Open it carefully. Some travelers leave more behind a picture than you'd think."
 </blockquote>
-<p class="lead">We get one file — <code>souvenirs.jpg</code> — and a hint that there's "more behind a picture than you'd think." Sounds like a polyglot file to me.</p>
+<p class="lead">We get one file — <code>souvenirs.jpg</code> — and from the CTF description we can tell there is more under the hood.</p>
 
 <h3>JPEGs That Are Secretly ZIPs Too</h3>
-<p>One of the oldest tricks in the forensics playbook: stick a ZIP archive onto the end of a JPEG. Image viewers read a JPEG from the <code>FF D8</code> Start of Image marker and just stop the moment they hit <code>FF D9</code> (End of Image) — anything appended after that is invisible to them. ZIP tools, meanwhile, scan from the <em>end</em> of the file to find the central directory record, so they're perfectly happy to find a ZIP archive sitting at the tail of a "JPEG."</p>
-<p>Combine the two and you get a file that's a valid image and a valid archive at the same time, depending on what's opening it.</p>
+<p>A basic forensics operation is to stick a ZIP (or other compressed file) onto the end of a JPEG. Image viewers read a JPEG from the <code>FF D8</code> Start of Image marker and just stop the moment they hit <code>FF D9</code> (End of Image) — anything appended after that is invisible to them.</p>
 
 <h3>Checking the Theory</h3>
-<p>Pop <code>souvenirs.jpg</code> open in a hex editor — ImHex, GHex, CyberChef, whatever you've got — and jump to the end of the file. There's the JPEG's <code>FF D9</code> marker at offset <code>0x9aa7</code>, and right after it: <code>50 4b 03 04</code>, the ZIP local file header signature. You can even see readable filenames in there, like <code>postcards/01_tokyo.txt</code>.</p>
+<p>Open <code>souvenirs.jpg</code> in a hex editor and jump to the end of the file. There's the JPEG's <code>FF D9</code> marker at offset <code>0x9aa7</code>, and right after it: <code>50 4b 03 04</code>, the ZIP local file header signature. You can even see readable filenames in there, like <code>postcards/01_tokyo.txt</code>.</p>
 <p>If you'd rather stay in a terminal, this gets you the same information:</p>
-<pre><code class="language-bash"># Extract printable strings from the end of the file
-strings souvenirs.jpg | tail -n 10
-
-# Inspect the last few hex lines of the file
+<pre><code class="language-bash">strings souvenirs.jpg | tail -n 10
 hexdump -C souvenirs.jpg | tail -n 20</code></pre>
-<p>Either way, you'll spot the <code>postcards/</code> filenames and the ZIP header sitting at the tail of the image.</p>
+<p>Either way, you'll spot the <code>postcards/</code> filenames and the ZIP header just sitting there in plain sight.</p>
 
 <h3>Pulling the Archive Out</h3>
-<p>Once you know it's a polyglot, extraction is just normal ZIP handling:</p>
-<pre><code class="language-bash"># Option 1: Rename the file and let unzip handle it
-cp souvenirs.jpg archive.zip
-unzip archive.zip -d extracted_files/
-
-# Option 2: Use binwalk to automatically carve files
-binwalk -e souvenirs.jpg</code></pre>
-
-<p>Or do it programmatically if you'd rather:</p>
-<pre><code class="language-python">import zipfile
-
-# Carve the ZIP payload
-with open("souvenirs.jpg", "rb") as f:
-    data = f.read()
-
-eoi_idx = data.find(b"\\xff\\xd9")
-zip_data = data[eoi_idx + 2:]
-
-# Save and extract
-with open("extracted.zip", "wb") as f_out:
-    f_out.write(zip_data)
-
-with zipfile.ZipFile("extracted.zip", "r") as z:
-    z.extractall("postcards_extracted")
-    print("Extracted:", z.namelist())</code></pre>
+<p>Once you know it's a polyglot, extraction is effortless with binwalk, which automatically identifies and extracts embedded files:</p>
+<pre><code class="language-bash">binwalk -e souvenirs.jpg</code></pre>
+<p>You can also, of course, use other ways to get the files out but this is the easiest one.</p>
 
 <h3>Reading the Postcards</h3>
 <p>Unzipping gives us a <code>postcards/</code> folder with four text files:</p>
@@ -406,7 +353,7 @@ Safe travels, traveler.</code></pre>
 <blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
 "Blue Mountain Geotechnical is a Denver-based soils and rock-mechanics consultancy. A cryptolocker affiliate passed through the firm's file shares and partly corrupted several project archives before IT lead Bela Srivastava pulled the plug. Project engineer Adalyn Proteau needs the site dispatch read before Monday's client meeting."
 </blockquote>
-<p class="lead">We're given a ZIP archive that got partially chewed up by ransomware mid-job. The task is to figure out exactly what's broken, patch it back together by hand, and read what's inside before Monday.</p>
+<p class="lead">We're given a ZIP archive that is corrupted, and we need to get the flag out of it.</p>
 
 <h3>How a ZIP File Is Actually Structured</h3>
 <p>A ZIP archive is made of three main pieces:</p>
@@ -427,66 +374,14 @@ Safe travels, traveler.</code></pre>
 
 <h3>Rebuilding the EOCD by Hand</h3>
 <p>The good news is the EOCD is small, fixed-size, and every field can be worked out from what we already know about the archive. All fields are little-endian:</p>
-<table>
-  <thead>
-    <tr>
-      <th>Field</th>
-      <th>Size</th>
-      <th>Value (Hex)</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Signature</td>
-      <td>4 bytes</td>
-      <td><code>50 4B 05 06</code></td>
-      <td>EOCD Magic Bytes</td>
-    </tr>
-    <tr>
-      <td>Disk Number</td>
-      <td>2 bytes</td>
-      <td><code>00 00</code></td>
-      <td>Disk 0</td>
-    </tr>
-    <tr>
-      <td>CD Disk Number</td>
-      <td>2 bytes</td>
-      <td><code>00 00</code></td>
-      <td>Disk 0 contains the start of the CD</td>
-    </tr>
-    <tr>
-      <td>Disk CD Entries</td>
-      <td>2 bytes</td>
-      <td><code>02 00</code></td>
-      <td>2 files archived</td>
-    </tr>
-    <tr>
-      <td>Total CD Entries</td>
-      <td>2 bytes</td>
-      <td><code>02 00</code></td>
-      <td>2 files total</td>
-    </tr>
-    <tr>
-      <td>Size of CD</td>
-      <td>4 bytes</td>
-      <td><code>7A 00 00 00</code></td>
-      <td>122 bytes (66 + 56 bytes)</td>
-    </tr>
-    <tr>
-      <td>Offset of CD</td>
-      <td>4 bytes</td>
-      <td><code>14 01 00 00</code></td>
-      <td>Offset 276 (0x114) relative to start of archive</td>
-    </tr>
-    <tr>
-      <td>Comment Length</td>
-      <td>2 bytes</td>
-      <td><code>00 00</code></td>
-      <td>No comment</td>
-    </tr>
-  </tbody>
-</table>
+<pre><code>Signature: 50 4B 05 06
+Disk Number: 00 00
+CD Disk Number: 00 00
+Disk CD Entries: 02 00
+Total CD Entries: 02 00
+Size of CD: 7A 00 00 00 (122 bytes)
+Offset of CD: 14 01 00 00 (276 bytes)
+Comment Length: 00 00</code></pre>
 
 <p>Which gives us the following bytes to tack on at the end of the file:</p>
 <pre><code>50 4B 05 06 00 00 00 00 02 00 02 00 7A 00 00 00 14 01 00 00 00 00</code></pre>
@@ -495,28 +390,20 @@ Safe travels, traveler.</code></pre>
 <p>Take the corrupted byte array we were given, glue our hand-built EOCD onto the end, write it out as a ZIP, and try extracting it:</p>
 <pre><code class="language-python">import zipfile
 
-# Provided corrupted bytes
 arr = bytes([
     0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0x05, 0x57,
     0xB1, 0x5C, 0x5F, 0x7D, 0x72, 0xB3, 0x81, 0x00, 0x00, 0x00, 0x88, 0x00,
-    # ... [truncated for readability] ...
+    # ... (hex) ...
     0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0xB3, 0x00, 0x00, 0x00, 0x72, 0x65,
     0x61, 0x64, 0x6D, 0x65, 0x2E, 0x74, 0x78, 0x74
 ])
 
-# Manually constructed EOCD record
 eocd = bytes([
-    0x50, 0x4B, 0x05, 0x06, # Signature
-    0x00, 0x00,             # Number of this disk
-    0x00, 0x00,             # Disk where CD starts
-    0x02, 0x00,             # CD records on this disk
-    0x02, 0x00,             # Total CD records
-    0x7A, 0x00, 0x00, 0x00, # Size of central directory (122 bytes)
-    0x14, 0x01, 0x00, 0x00, # Offset of start of CD (276 bytes)
-    0x00, 0x00              # Comment length
+    0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00,
+    0x02, 0x00, 0x02, 0x00, 0x7A, 0x00, 0x00, 0x00,
+    0x14, 0x01, 0x00, 0x00, 0x00, 0x00
 ])
 
-# Reassemble and extract
 repaired_data = arr + eocd
 with open("repaired.zip", "wb") as f:
     f.write(repaired_data)
@@ -550,7 +437,7 @@ SVIUSCG{bluemountain_zip_eocd_rebuild}</code></pre>
 <p class="lead">We've got a Windows user profile extract and a specific date to focus on. Basically: figure out what Piper actually did on 2026-07-18, and where the data ended up going.</p>
 
 <h3>Where to Start Looking</h3>
-<p>For a workstation-level insider leak, there's a fairly standard set of places worth checking first:</p>
+<p>There's a fairly standard set of places worth checking first:</p>
 <ol>
   <li><strong>Shell history</strong> — <code>ConsoleHost_history.txt</code> for any PowerShell commands she ran.</li>
   <li><strong>Browser history</strong> — Chrome's <code>History</code> SQLite database, looking for uploads or paste sites.</li>
@@ -601,10 +488,8 @@ SVIUSCG{osprey_chrome_history_leak_url}</code></pre>
 <p>Pulling up the frontend JS for the login form, here's the part that matters:</p>
 <pre><code class="language-javascript">form.addEventListener('submit', async function (e) {
     e.preventDefault();
-
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
-
     clearError();
 
     if (!username || !password) {
@@ -615,27 +500,18 @@ SVIUSCG{osprey_chrome_history_leak_url}</code></pre>
     setLoading(true);
 
     try {
-        // Step 1: Retrieve the stored password hash for the given username.
         const hashRes = await fetch('/api/auth/hash', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username }),
         });
 
-        if (!hashRes.ok) {
-            throw new Error('Invalid username or password.');
-        }
-
+        if (!hashRes.ok) throw new Error('Invalid username or password.');
         const { hash } = await hashRes.json();
 
-        // Step 2: Compare the entered password against the retrieved hash client-side.
         const isValid = await bcrypt.compare(password, hash);
+        if (!isValid) throw new Error('Invalid username or password.');
 
-        if (!isValid) {
-            throw new Error('Invalid username or password.');
-        }
-
-        // Step 3: Authenticate the session using the hash as a token, then redirect.
         const token = btoa(hash);
         document.cookie = \`auth_token=\${token}; path=/; SameSite=Lax\`;
         window.location.href = '/announcements';
@@ -656,7 +532,7 @@ SVIUSCG{osprey_chrome_history_leak_url}</code></pre>
 <h3>Putting the Pieces Together</h3>
 
 <h4>Step 1 — Figure Out the Admin's Username</h4>
-<p>The public side of the announcement board mentions a Senior Intern coordinator named <strong>Alex Rivera</strong>. Going by the obvious corporate convention, that's probably <code>alex.rivera</code>.</p>
+<p>The public side of the announcement board mentions a Senior Intern coordinator named Alex Rivera. Going by the obvious corporate convention, that's probably <code>alex.rivera</code>.</p>
 
 <h4>Step 2 — Grab Their Hash</h4>
 <p>Just ask the API — it doesn't check anything before answering:</p>
@@ -695,31 +571,30 @@ SVIUSCG{[flag]}</code></pre>
 <blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
 "Meridian fraud analyst Desmond Yarwood flagged a submission, Claim #47102, after the attached photo looked like it could have possibly been edited to add damages that weren't there in real life! Desmond sent the photo to the SIU for a structural look."
 </blockquote>
-<p class="lead">A claims photo that may have been edited to show damage that was never actually there. The classic move for catching this kind of edit: check the EXIF thumbnail, because editors love to update the main image and forget the preview buried inside the metadata.</p>
+<p class="lead">The CTF description is saying that the photo was edited. The classic move for catching this kind of edit: check the EXIF thumbnail, because editors love to update the main image and forget the preview buried inside the metadata.</p>
 
 <h3>Why This Trick Works</h3>
 <p>JPEG files can carry a small embedded preview thumbnail inside their EXIF (APP1) metadata. When someone edits a photo, the editor usually rewrites the main image data but leaves that old thumbnail completely untouched — which means the thumbnail can still show what the photo looked like <em>before</em> the edit happened.</p>
 <p>A normal JPEG starts with <code>FF D8</code> (Start of Image) and ends with <code>FF D9</code> (End of Image). If a second <code>FF D8</code> shows up somewhere inside the file, that's a strong sign there's a nested JPEG hiding in the metadata — almost always a thumbnail.</p>
 
 <h3>Finding the Hidden Thumbnail</h3>
-<p>Stepping through <code>challenge (1).jpg</code> byte by byte:</p>
+<p>Stepping through <code>challenge.jpg</code> byte by byte:</p>
 <ul>
   <li>The main JPEG starts at offset <code>0</code>, as you'd expect (<code>FF D8</code>).</li>
-  <li>A second <code>FF D8</code> appears at offset <strong>86</strong> — sitting inside the EXIF block, this is our embedded thumbnail.</li>
-  <li>That thumbnail's own <code>FF D9</code> terminator shows up at offset <strong>59839</strong>.</li>
+  <li>A second <code>FF D8</code> appears at offset 86 — sitting inside the EXIF block, this is our embedded thumbnail.</li>
+  <li>That thumbnail's own <code>FF D9</code> terminator shows up at offset 59839.</li>
 </ul>
 <p>So the thumbnail is simply bytes 86 through 59839. Carving it out:</p>
 <pre><code class="language-python">with open("challenge (1).jpg", "rb") as f:
     data = f.read()
 
-# Extract the embedded JPEG thumbnail (up to index 59839 inclusive)
 thumbnail = data[86:59840]
 
-with open("thumb_challenge (1).jpg", "wb") as out:
+with open("thumbnail_challenge.jpg", "wb") as out:
     out.write(thumbnail)</code></pre>
 
 <h3>Flag Recovery</h3>
-<p>Opening up <code>thumb_challenge (1).jpg</code> shows the shop the way it looked <em>before</em> the edit — the window that's shattered in the main image is completely intact in the thumbnail, with a sign hanging in it that has the flag written right on it.</p>
+<p>Opening up <code>thumbnail_challenge.jpg</code> shows the shop the way it looked <em>before</em> the edit — the window that's shattered in the main image is completely intact in the thumbnail, with a sign hanging in it that has the flag written right on it.</p>
 
 <h3>Flag</h3>
 <pre><code>SVIUSCG{meridian_thumbnail_reveal_garret}</code></pre>`
@@ -733,7 +608,7 @@ with open("thumb_challenge (1).jpg", "wb") as out:
 <blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
 "Welcome to Lost in Translation, a tiny travel-notes app from a wanderer who wanted to keep memories of every country she's visited. Only the admin can read the master vault — but the developer thought a quick MD5 signature would be plenty to keep guests out. Can you read the vault?"
 </blockquote>
-<p class="lead">A small Flask app that signs its session cookies with MD5. "A quick MD5 signature" in the prompt is doing a lot of foreshadowing — this is exactly the kind of setup that falls apart to a length extension attack.</p>
+<p class="lead">A small Flask app that signs its session cookies with MD5.</p>
 
 <h3>How Sessions Get Signed</h3>
 <p>The relevant chunk of the source code:</p>
@@ -746,8 +621,8 @@ def verify_session(data: bytes, signature: str) -> bool:
     expected = sign_session(data)
     return expected == signature
 </code></pre>
-<p>This is the classic <code>MD5(secret || data)</code> pattern. Because MD5 is built on the Merkle-Damgård construction, it's vulnerable to a <strong>hash length extension attack</strong>: given a valid <code>(data, signature)</code> pair, you can compute a valid signature for <code>data || padding || extra</code> — without ever knowing the secret itself.</p>
-<p>And it gets even better for us. Look at how the session string gets parsed:</p>
+<p>This is the classic <code>MD5(secret || data)</code> pattern. Because MD5 is built on the Merkle-Damgård construction, it's vulnerable to a hash length extension attack: given a valid <code>(data, signature)</code> pair, you can compute a valid signature for <code>data || padding || extra</code> — without ever knowing the secret itself.</p>
+<p>Look at how the session string gets parsed:</p>
 <pre><code class="language-python">def parse_session(raw: str):
     """Parse a session string of the form 'key1=val1&key2=val2&...' into a dict."""
     result = {}
@@ -760,12 +635,12 @@ def verify_session(data: bytes, signature: str) -> bool:
 <p>It splits on <code>&</code> and processes the pairs left to right, so whatever comes <em>last</em> wins. If we can tack <code>&role=admin</code> onto the end of our session, it'll silently override whatever <code>role</code> was set during login.</p>
 
 <h3>Doing the Length Extension</h3>
-<p>Log in as any throwaway guest account — say, <code>SurfyCamp84</code>. The server hands back two cookies:</p>
+<p>Log in as any throwaway guest account — for example my usual username, <code>SurfyCamp84</code>. The server hands back two cookies:</p>
 <ul class="list-disc pl-6 space-y-2 mb-4">
-  <li><strong>session</strong>: <code>757365723d537572667943616d70383426726f6c653d6775657374</code> (hex for <code>user=SurfyCamp84&role=guest</code>)</li>
-  <li><strong>sig</strong>: <code>7708d4997696c7ad397925c83c92065e</code></li>
+  <li>session: <code>757365723d537572667943616d70383426726f6c653d6775657374</code> (hex for <code>user=SurfyCamp84&role=guest</code>)</li>
+  <li>sig: <code>7708d4997696c7ad397925c83c92065e</code></li>
 </ul>
-<p>We want to append <code>&role=admin</code> (hex: <code>26726f6c653d61646d696e</code>). <code>hash_extender</code> can do all the MD5 padding math for us — since we don't know the secret's length, just sweep across a range:</p>
+<p>We want to append <code>&role=admin</code> (hex: <code>26726f6c653d61646d696e</code>). <code>hash_extender</code> (a tool I found on GitHub for hash extending) can do all the MD5 padding math for us — since we don't know the secret's length, just try different lengths. First we compile the tool and then run:</p>
 <pre><code class="language-bash">./hash_extender \\
   -d 757365723d537572667943616d70383426726f6c653d6775657374 --data-format hex \\
   -s 7708d4997696c7ad397925c83c92065e \\
@@ -775,7 +650,7 @@ def verify_session(data: bytes, signature: str) -> bool:
 <p>This produces a forged session string (padding included) and a matching MD5 signature for every possible secret length from 1 to 30 bytes.</p>
 
 <h3>Finding the Right Length</h3>
-<p>From here it's just trial and error — drop each candidate session/signature pair into our cookies and try the request until one works. The secret turns out to be <strong>16 bytes</strong> long, and that candidate gets us through. With those forged cookies set, the page now renders as if we're logged in as admin.</p>
+<p>From here it's just trial and error — write each session/signature pair into cookies and try the combinations until one works. The secret turns out to be 16 bytes long. With those forged cookies set, the page now renders as if we're logged in as admin.</p>
 
 <h3>Flag</h3>
 <p>The admin-only vault page shows the flag once we're authenticated:</p>
@@ -811,8 +686,7 @@ Comment                         : 2d2d2d2d2d424547494e20525341205052495641544520
 
 <h3>Decoding the Key</h3>
 <p>That hex string is ASCII underneath — decode the first few bytes and you get <code>-----BEGIN RSA PRIVATE KEY-----</code>. So the whole Comment field is a hex-encoded PEM private key. Pull it out and decode it back to bytes:</p>
-<pre><code class="language-bash"># Decode the hex payload back into a PEM key
-cat comment.txt | xxd -r -p > key.pem</code></pre>
+<pre><code class="language-bash">cat comment.txt | xxd -r -p > key.pem</code></pre>
 <p><code>key.pem</code> now opens up as a normal RSA private key file.</p>
 
 <h3>Decrypting the Flag</h3>
@@ -871,9 +745,8 @@ print(flag.decode())</code></pre>
 <h3>Turning Bits Back Into Bytes</h3>
 <p>Group the characters into chunks of 8 and convert each chunk back into a byte:</p>
 <pre><code class="language-python">with open("digits.bin", "r") as f:
-    bits = f.read().replace("\\s", "")  # Strip whitespace
+    bits = f.read().replace(" ", "").replace("\\n", "")
 
-# Convert groups of 8 bits into bytes
 data = bytes(int(bits[i:i+8], 2) for i in range(0, len(bits), 8))
 
 with open("recovered_file.jpg", "wb") as f:
@@ -927,14 +800,11 @@ with open("recovered_file.jpg", "wb") as f:
 
 <h3>Building the Timeline</h3>
 <p>Same Sleuth Kit workflow as before:</p>
-<pre><code class="language-bash"># Generate metadata body file
-fls -r -m / partition4.img > output.txt
-
-# Create human-readable sorted timeline
+<pre><code class="language-bash">fls -r -m / partition4.img > output.txt
 mactime -b output.txt > timeline.txt</code></pre>
 
 <h3>The Giveaway</h3>
-<p>Timestomping tends to stick out the moment you sort by date, because someone has to actually pick a fake timestamp, and people aren't great at picking convincing ones. Running <code>head timeline.txt</code> on the sorted output, the oldest entry in the whole image is <code>/bin/bcab</code>, dated <strong>January 02, 1985</strong>. A binary in <code>/bin</code> that predates this entire CTF by four decades is, to put it gently, not normal.</p>
+<p>Timestomping tends to stick out the moment you sort by date, because someone has to actually pick a fake timestamp, and people aren't great at picking convincing ones. Running <code>head timeline.txt</code> on the sorted output, the oldest entry in the whole image is <code>/bin/bcab</code>, dated January 02, 1985. A binary in <code>/bin</code> that predates this entire CTF by four decades is, to put it gently, not normal.</p>
 
 <h3>Pulling the File</h3>
 <p>Grab the inode for <code>/bin/bcab</code> — in this case <code>4945</code> — and carve it out the same way as before:</p>
@@ -998,7 +868,7 @@ print(flag.decode())</code></pre>
 
 <h3>Finding the Flag</h3>
 <p>From here it's just a grep through the dump:</p>
-<pre><code class="language-bash">grep -oE "picoCTF\{.*\}" all_objects.txt</code></pre>
+<pre><code class="language-bash">grep -oE "picoCTF\\{.*\\}" all_objects.txt</code></pre>
 <p>...and the flag turns up, sitting inside one of those orphaned blob objects.</p>
 
 <h3>Flag</h3>
@@ -1010,14 +880,16 @@ print(flag.decode())</code></pre>
         category: 'forensics',
         description: 'Can you find the flag in this disk image?',
         content: `<h2>Forensics Git 0 — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"Can you find the flag in this disk image?"</blockquote>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"Can you find the flag in this disk image?"
+</blockquote>
 <p class="lead">The intro challenge in the Git forensics series — a disk image containing a repo, and a file that's been removed from the working tree but is still sitting safely in history.</p>
 
 <h3>Mounting the Partition</h3>
 <p>First, figure out where the partition actually starts:</p>
 <pre><code class="language-bash">fdisk -l disk.img</code></pre>
 <p>Multiply the start sector by the sector size (usually 512 bytes) to get the byte offset, then mount it read-only:</p>
-<pre><code class="language-bash">sudo mount -o loop,offset=<calculated_offset> disk.img /mnt/ctf</code></pre>
+<pre><code class="language-bash">sudo mount -o loop,offset=&lt;calculated_offset&gt; disk.img /mnt/ctf</code></pre>
 
 <h3>Looking at the Repo History</h3>
 <p>There's a repo sitting at <code>/mnt/ctf/home/ctf-player/Code/secrets/.git</code>, and since it's intact, normal git commands work fine. Checking the log:</p>
@@ -1026,7 +898,7 @@ print(flag.decode())</code></pre>
 
 <h3>Getting the File Back</h3>
 <p>Just check out the commit right before that deletion:</p>
-<pre><code class="language-bash">git checkout <commit_hash>
+<pre><code class="language-bash">git checkout &lt;commit_hash&gt;
 cat secret_flag.txt</code></pre>
 
 <h3>Flag</h3>
@@ -1038,7 +910,9 @@ cat secret_flag.txt</code></pre>
         category: 'forensics',
         description: 'Can you find the flag in this disk image? This time I deleted the file! Let see you get it now!',
         content: `<h2>DISKO 4 — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"Can you find the flag in this disk image? This time I deleted the file! Let see you get it now!"</blockquote>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"Can you find the flag in this disk image? This time I deleted the file! Let see you get it now!"
+</blockquote>
 <p class="lead">Same disk-image-with-a-flag setup as the rest of the DISKO series, except this time the file's been deleted. On ext4, "deleted" mostly just means the inode and its blocks have been marked free — the actual data is usually still sitting there until something overwrites it.</p>
 
 <h3>Listing Deleted Files</h3>
@@ -1064,9 +938,10 @@ cat recovered</code></pre>
         category: 'crypto',
         description: 'In this challenge, you are tasked with recovering a hidden flag that has been encrypted using a combination of Linear Feedback Shift Register (LFSR) and AES encryption. The LFSR is used to derive a key for AES encryption, making it crucial to understand its workings to decrypt the message.\\n\\nThe flag has been stored in a file and encrypted. Your goal is to derive the key used for encryption from the LFSR state and taps provided in the output, and then decrypt the flag to retrieve it.',
         content: `<h2>cryptomaze — picoCTF 2026</h2>
-<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">"In this challenge, you are tasked with recovering a hidden flag that has been encrypted using a combination of Linear Feedback Shift Register (LFSR) and AES encryption. The LFSR is used to derive a key for AES encryption, making it crucial to understand its workings to decrypt the message.
-
-The flag has been stored in a file and encrypted. Your goal is to derive the key used for encryption from the LFSR state and taps provided in the output, and then decrypt the flag to retrieve it."</blockquote>
+<blockquote class="border-l-4 border-accent pl-4 italic text-text-secondary my-4">
+"In this challenge, you are tasked with recovering a hidden flag that has been encrypted using a combination of Linear Feedback Shift Register (LFSR) and AES encryption. The LFSR is used to derive a key for AES encryption, making it crucial to understand its workings to decrypt the message.<br/><br/>
+The flag has been stored in a file and encrypted. Your goal is to derive the key used for encryption from the LFSR state and taps provided in the output, and then decrypt the flag to retrieve it."
+</blockquote>
 <p class="lead">An AES-encrypted flag where the AES key itself comes out of an LFSR. We're given the LFSR's seed and tap positions, so really this challenge boils down to "simulate the LFSR correctly, then decrypt."</p>
 
 <h3>Simulating the LFSR</h3>
@@ -1077,13 +952,10 @@ taps = [TAP_INDICES]
 popped_bits = []
 
 for _ in range(128):
-    # Calculate feedback bit
     feedback = 0
     for tap in taps:
         feedback ^= state[tap]
-    # Pop the output bit
     popped_bits.append(state[0])
-    # Shift state and insert feedback
     state = state[1:] + [feedback]</code></pre>
 
 <h3>Turning That Into an AES Key</h3>
